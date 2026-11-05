@@ -73,6 +73,80 @@ El sistema admitirá distintos formatos de entrada. Se utilizarán herramientas 
 El resultado de la ingesta será una representación común de documentos y fragmentos, independiente del formato original.
 
 
+### Estrategia de chunking
+
+Se utilizará una estrategia de chunking híbrida, adaptada a la naturaleza del contenido. El código fuente y la documentación seguirán procesos de fragmentación diferentes, pero producirán una representación común de chunks.
+
+#### Código fuente
+
+**Estrategia: AST-based chunking mediante Tree-sitter.**
+
+La fragmentación utilizará la estructura sintáctica del código para evitar divisiones arbitrarias.
+
+Criterios:
+
+- Cada función o método constituirá inicialmente un chunk independiente.
+- Las clases pequeñas se conservarán en un único chunk cuando su tamaño lo permita.
+- Las clases grandes se dividirán por métodos, conservando la relación con su clase contenedora.
+- Las funciones y métodos que superen el tamaño máximo se dividirán respetando la estructura sintáctica siempre que sea posible.
+- No se aplicará overlap por defecto.
+- Se conservarán las referencias al archivo original y a las líneas de código correspondientes.
+
+#### Documentación
+
+**Estrategia: Recursive Text Splitting adaptado a la estructura documental.**
+
+La fragmentación tendrá en cuenta la jerarquía y organización del documento.
+
+Criterios:
+
+- Priorizar la división por secciones y encabezados.
+- Agrupar párrafos relacionados.
+- Mantener listas y bloques de código unidos cuando sea posible.
+- Dividir las secciones demasiado grandes por párrafos.
+- Aplicar overlap únicamente cuando sea necesario para preservar la continuidad entre fragmentos.
+- Conservar la jerarquía de encabezados y la procedencia del contenido.
+
+Parámetros iniciales:
+
+- **Tamaño objetivo:** 500 tokens.
+- **Tamaño máximo:** 800 tokens.
+- **Overlap:** 80 tokens.
+- **Unidad de división:** secciones, párrafos y elementos estructurales.
+
+Estos valores son iniciales y podrán ajustarse mediante la evaluación del sistema RAG.
+
+#### Contexto y metadatos
+
+Cada chunk conservará información sobre su procedencia y contexto estructural.
+
+Se utilizará una representación común con los siguientes campos:
+
+| Campo | Descripción |
+|---|---|
+| `chunk_id` | Identificador único del fragmento. |
+| `document_id` | Identificador del documento de origen. |
+| `content` | Contenido del fragmento. |
+| `source` | Ruta del archivo original. |
+| `content_type` | Tipo de contenido: `code` o `documentation`. |
+| `language` | Lenguaje de programación o idioma, cuando corresponda. |
+| `start_line` | Línea inicial, cuando esté disponible. |
+| `end_line` | Línea final, cuando esté disponible. |
+| `section` | Sección o elemento estructural al que pertenece. |
+| `parent` | Clase, sección o elemento contenedor, cuando corresponda. |
+
+El contexto adicional se conservará preferentemente mediante metadatos. Cuando aporte información relevante para la recuperación semántica, podrá incorporarse también al texto utilizado para generar el embedding.
+
+Los metadatos permitirán localizar el contenido original, reconstruir su contexto y aplicar filtros durante la recuperación.
+
+#### Consideraciones generales
+
+- El tamaño de los chunks deberá ser compatible con los límites de los modelos de embeddings y reranking.
+- La longitud máxima de entrada del Cross-Encoder incluirá tanto la consulta como el fragmento.
+- Se evitará duplicar contenido innecesariamente.
+- La fragmentación deberá preservar la coherencia semántica y estructural.
+
+
 ## 4. Embeddings
 
 **Modelo: `Qwen/Qwen3-Embedding-0.6B`**
@@ -196,7 +270,6 @@ El flujo principal del sistema será:
 
 Las siguientes cuestiones quedan fuera del alcance de este documento y deberán resolverse en sus correspondientes fases de desarrollo:
 
-- Estrategia y parámetros de chunking.
 - Estrategia de combinación de resultados de búsqueda híbrida.
 - Diseño de prompts y gestión del contexto.
 - Interfaz de usuario y comunicación con el sistema.
