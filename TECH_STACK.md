@@ -176,7 +176,6 @@ El flujo principal del sistema será:
 
 Las siguientes cuestiones quedan fuera del alcance de este documento y deberán resolverse en sus correspondientes fases de desarrollo:
 
-- Selección del modelo de embeddings.
 - Selección del modelo Cross-Encoder.
 - Estrategia y parámetros de chunking.
 - Estrategia de combinación de resultados de búsqueda híbrida.
