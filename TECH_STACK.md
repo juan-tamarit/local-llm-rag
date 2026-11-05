@@ -72,22 +72,27 @@ El sistema admitirá distintos formatos de entrada. Se utilizarán herramientas 
 
 El resultado de la ingesta será una representación común de documentos y fragmentos, independiente del formato original.
 
+
 ## 4. Embeddings
 
-**Sentence Transformers**
+**Modelo: `Qwen/Qwen3-Embedding-0.6B`**
 
-Se utilizará para transformar documentos y consultas en representaciones vectoriales.
+Se utilizará como modelo inicial para transformar documentos y consultas en representaciones vectoriales. Se selecciona por su capacidad multilingüe y su adecuación a tareas de recuperación que combinan código fuente, documentación técnica y consultas en lenguaje natural.
 
-Responsabilidades:
+Configuración inicial prevista:
 
-- Generación de embeddings.
-- Representación semántica de documentos.
-- Cálculo de similitud entre consultas y fragmentos.
-- Ejecución de modelos Cross-Encoder para reranking.
+- **Biblioteca:** Sentence Transformers.
+- **Backend:** PyTorch.
+- **Precisión:** FP16.
+- **Dispositivo:** GPU mediante CUDA.
+- **Dimensiones de salida:** 1.024.
+- **Batch size inicial:** 1-4, sujeto a validación de memoria.
+- **Contexto máximo del modelo:** hasta 32.768 tokens.
+- **Licencia:** Apache 2.0.
 
-La generación de embeddings será independiente del modelo generativo.
+La configuración queda pendiente de una prueba real de carga e inferencia en la NVIDIA GTX 1060 de 4 GB de VRAM. El tamaño de los fragmentos y el contexto efectivo de recuperación se definirán posteriormente en la decisión de chunking.
 
-Se utilizará PyTorch como backend y CUDA cuando resulte conveniente.
+La generación de embeddings será independiente del modelo generativo. La selección de este modelo no implica utilizar embeddings distintos para código y documentación: inicialmente ambos tipos de contenido compartirán el mismo espacio vectorial.
 
 ## 5. Almacenamiento vectorial
 
