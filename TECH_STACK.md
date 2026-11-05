@@ -167,7 +167,8 @@ El flujo principal del sistema será:
 | HTML | BeautifulSoup |
 | Markdown | markdown-it-py |
 | Código fuente | Tree-sitter |
-| Embeddings | Sentence Transformers |
+| Modelo de embeddings | Qwen3-Embedding-0.6B |
+| Biblioteca de embeddings | Sentence Transformers |
 | Vector Database | Qdrant |
 | Búsqueda léxica | rank-bm25 |
 | Reranking | CrossEncoder |
