@@ -130,13 +130,31 @@ Resulta especialmente útil para búsquedas de identificadores, nombres de clase
 
 Se combinarán los resultados de la búsqueda semántica y léxica para obtener un conjunto de candidatos más completo.
 
+
 ### 6.4. Reranking
 
-**CrossEncoder (Sentence Transformers)**
+**Modelo: `Qwen/Qwen3-Reranker-0.6B`**
 
-Se utilizará para volver a ordenar los fragmentos recuperados según su relevancia respecto a la consulta original.
+Se utilizará para volver a ordenar los fragmentos recuperados durante la fase de búsqueda híbrida, evaluando conjuntamente la consulta original y cada fragmento candidato.
 
-El objetivo es proporcionar al LLM únicamente el contexto más relevante.
+Se selecciona por su capacidad multilingüe y su adecuación a tareas de recuperación de código fuente y documentación técnica.
+
+Configuración inicial prevista:
+
+- **Biblioteca:** Sentence Transformers.
+- **Clase:** CrossEncoder.
+- **Backend:** PyTorch.
+- **Precisión:** FP16.
+- **Dispositivo:** GPU mediante CUDA.
+- **Batch size inicial:** 1.
+- **Longitud máxima inicial:** 1.024 tokens por pareja consulta-documento.
+- **Licencia:** Apache 2.0.
+
+La configuración queda pendiente de una prueba real de carga e inferencia en la NVIDIA GTX 1060 de 4 GB de VRAM.
+
+El objetivo es proporcionar al LLM únicamente los fragmentos más relevantes, mejorando la calidad del contexto utilizado durante la generación.
+
+La gestión de memoria deberá contemplar que el modelo generativo, el modelo de embeddings y el Cross-Encoder no tienen por qué permanecer cargados simultáneamente en GPU.
 
 ## 7. Arquitectura general
 
@@ -171,13 +189,13 @@ El flujo principal del sistema será:
 | Biblioteca de embeddings | Sentence Transformers |
 | Vector Database | Qdrant |
 | Búsqueda léxica | rank-bm25 |
-| Reranking | CrossEncoder |
+| Modelo de reranking | Qwen3-Reranker-0.6B |
+| Biblioteca de reranking | Sentence Transformers (CrossEncoder) |
 
 ## 9. Decisiones pendientes
 
 Las siguientes cuestiones quedan fuera del alcance de este documento y deberán resolverse en sus correspondientes fases de desarrollo:
 
-- Selección del modelo Cross-Encoder.
 - Estrategia y parámetros de chunking.
 - Estrategia de combinación de resultados de búsqueda híbrida.
 - Diseño de prompts y gestión del contexto.
