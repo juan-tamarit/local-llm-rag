@@ -307,6 +307,8 @@ El prompt se construirá dinámicamente a partir de los siguientes elementos:
 3. **Contexto RAG:** fragmentos recuperados de la documentación y el código del proyecto.
 4. **Pregunta del usuario:** consulta actual que debe resolver el modelo.
 
+La estructura y las instrucciones del prompt podrán modificarse y compararse mediante el sistema de evaluación definido en el apartado 11, utilizando el mismo conjunto de consultas para analizar su impacto en la calidad de las respuestas.
+
 Cada bloque se mantendrá separado mediante delimitadores explícitos para facilitar su identificación por parte del modelo.
 
 ### 7.3. Política de conocimiento y uso del RAG
@@ -331,6 +333,10 @@ En ambos casos podrá recurrir a sus conocimientos generales, diferenciándolos 
 
 La evaluación de la suficiencia del contexto corresponderá inicialmente al LLM. No se establecerá un umbral mínimo de puntuación del CrossEncoder para determinar automáticamente si los resultados son relevantes.
 
+Esta decisión se validará mediante el sistema de evaluación, prestando especial atención a la capacidad del modelo para reconocer información insuficiente y diferenciar el conocimiento documental de sus conocimientos generales.
+
+También se evaluará el comportamiento del sistema ante consultas con información disponible, parcialmente disponible y no disponible en la documentación.
+
 ### 7.4. Gestión del historial de conversación
 
 El historial se incorporará directamente al prompt, sin utilizar una inferencia adicional para reformular o contextualizar la pregunta actual.
@@ -345,7 +351,7 @@ Criterios:
 - No se recuperarán mensajes antiguos saltándose intercambios más recientes.
 - El historial tendrá un presupuesto máximo inicial de 500 tokens.
 
-El presupuesto podrá ajustarse posteriormente mediante pruebas.
+El presupuesto podrá ajustarse posteriormente mediante pruebas.El presupuesto inicial de 500 tokens se considerará un valor experimental. Su adecuación podrá evaluarse mediante la comparación de diferentes configuraciones de historial, analizando su impacto en la continuidad de las conversaciones y la calidad de las respuestas.
 
 ### 7.5. Gestión del contexto RAG
 
@@ -367,7 +373,11 @@ Criterios de truncamiento:
 - Documentación: conservar párrafos, listas y secciones completas siempre que sea posible.
 - Si no se puede realizar un recorte coherente, se descartará el fragmento y se continuará con el siguiente candidato.
 
-El objetivo es evitar cortes arbitrarios que puedan eliminar información necesaria para interpretar el contenido.
+El objetivo es evitar cortes arbitrarios que puedan eliminar información necesaria para interpretar el contenido.Los límites iniciales de 2.500 tokens para el contexto RAG y un máximo de cinco fragmentos se considerarán parámetros experimentales.
+
+Su adecuación se evaluará mediante el sistema definido en el apartado 11, analizando el impacto de diferentes presupuestos y cantidades de fragmentos sobre la calidad de la recuperación y las respuestas generadas.
+
+Cualquier modificación de estos parámetros deberá considerar tanto los resultados de Retrieval como los de Generation y End-to-End.
 
 #### Presupuesto global de contexto
 
@@ -455,7 +465,9 @@ El sistema deberá validar la integridad de las referencias generadas:
 - No se admitirán referencias a fragmentos inexistentes.
 - La lista final de fuentes se construirá a partir de los fragmentos realmente citados.
 
-Esta validación garantiza que las referencias apunten a fragmentos existentes, pero no verifica semánticamente que el contenido de cada fragmento respalde la afirmación asociada.
+Esta validación garantiza que las referencias apunten a fragmentos existentes, pero no verifica semánticamente que el contenido de cada fragmento respalde la afirmación asociada.La correspondencia entre las referencias y las afirmaciones realizadas se evaluará mediante la dimensión Citation Accuracy definida en el apartado 11.
+
+La validación estructural de las referencias y la evaluación de su correspondencia semántica se considerarán comprobaciones independientes.
 
 ## 8. Interfaz de usuario y comunicación con el sistema
 
@@ -551,10 +563,159 @@ El flujo principal del sistema será:
 | Modelo de reranking | Qwen3-Reranker-0.6B |
 | Biblioteca de reranking | Sentence Transformers (CrossEncoder) |
 
-## 11. Decisiones pendientes
+## 11. Estrategia de evaluación de la calidad del RAG
+
+### 11.1. Objetivo
+
+Se establecerá un sistema de evaluación que permita medir la calidad del RAG y validar experimentalmente las decisiones adoptadas en su diseño.
+
+La evaluación cubrirá tres niveles independientes:
+
+- **Retrieval:** capacidad del sistema para recuperar fragmentos relevantes.
+- **Generation:** calidad de las respuestas generadas a partir del contexto recuperado.
+- **End-to-End:** calidad del asistente en la resolución completa de las consultas.
+
+Se combinarán métricas automáticas con evaluación humana para obtener resultados cuantitativos y cualitativos.
+
+### 11.2. Conjunto de evaluación (Evaluation Dataset)
+
+Se construirá un conjunto de preguntas elaboradas manualmente a partir de código fuente y documentación técnica.
+
+Cada caso de evaluación contendrá:
+
+| Campo | Descripción |
+|---|---|
+| `query` | Pregunta realizada al asistente. |
+| `expected_answer` | Respuesta esperada o criterios para evaluar su corrección. |
+| `relevant_chunks` | Fragmentos relevantes para responder, identificados mediante su `chunk_id` y grado de relevancia. |
+| `answerable` | Indica si existe información documental suficiente para responder. |
+| `category` | Categoría de la consulta. |
+
+Los grados de relevancia de los fragmentos se establecerán inicialmente mediante la siguiente escala:
+
+- **3:** fragmento directamente necesario para responder.
+- **2:** fragmento que aporta información importante.
+- **1:** fragmento relacionado, pero secundario.
+- **0:** fragmento irrelevante.
+
+El conjunto de evaluación será independiente de la implementación del RAG y podrá utilizarse para comparar diferentes configuraciones del sistema.
+
+Se contemplarán preguntas sobre código, documentación, identificadores, consultas que combinen diferentes fuentes, preguntas ambiguas y consultas sin respuesta documental.
+
+### 11.3. Evaluación de Retrieval
+
+Se evaluará la capacidad de los distintos componentes de recuperación para encontrar y ordenar los fragmentos relevantes.
+
+Se utilizarán inicialmente las siguientes métricas:
+
+| Métrica | Objetivo |
+|---|---|
+| Recall@20 | Medir la proporción de fragmentos relevantes recuperados entre los 20 candidatos iniciales. |
+| MRR@20 | Medir la posición del primer fragmento relevante. |
+| nDCG@5 | Evaluar la calidad del ordenamiento de los cinco primeros resultados, considerando los grados de relevancia. |
+
+Se podrá utilizar Precision@K como métrica complementaria para analizar la proporción de resultados relevantes entre los fragmentos recuperados.
+
+La evaluación permitirá analizar las distintas etapas del proceso:
+
+- Búsqueda semántica mediante Qdrant.
+- Búsqueda léxica mediante BM25.
+- Combinación de resultados mediante RRF.
+- Reranking mediante Cross-Encoder.
+
+El objetivo será identificar la aportación de cada componente y detectar posibles problemas de recuperación u ordenamiento.
+
+### 11.4. Evaluación de Generation
+
+Se evaluará la calidad de las respuestas generadas por el LLM y su utilización del contexto recuperado.
+
+Se contemplarán las siguientes dimensiones:
+
+| Dimensión | Objetivo |
+|---|---|
+| Correctness | Evaluar la corrección de las respuestas. |
+| Faithfulness | Comprobar que las afirmaciones están respaldadas por el contexto recuperado. |
+| Answer Relevance | Evaluar si la respuesta resuelve la consulta planteada. |
+| Citation Accuracy | Comprobar que las referencias respaldan las afirmaciones correspondientes. |
+| Abstention | Evaluar si el modelo reconoce cuándo la información disponible es insuficiente. |
+
+Se combinarán evaluadores automáticos con revisión humana. La corrección técnica y la correspondencia entre afirmaciones y fuentes requerirán especial atención durante la evaluación manual.
+
+Se prestará especial atención al comportamiento del modelo ante tres situaciones:
+
+- **Información disponible:** debe responder utilizando el contexto documental.
+- **Información no disponible:** debe reconocer la insuficiencia de información documental y diferenciar los posibles complementos basados en conocimientos generales.
+- **Información parcialmente disponible:** debe responder únicamente a las cuestiones que pueda justificar e identificar las limitaciones del contexto.
+
+### 11.5. Evaluación End-to-End
+
+Se evaluará el comportamiento del sistema completo desde la recepción de la consulta hasta la generación de la respuesta.
+
+Se analizarán las siguientes dimensiones:
+
+- Corrección técnica de la respuesta.
+- Utilidad para resolver la consulta.
+- Uso adecuado de la información recuperada.
+- Comportamiento ante preguntas sin respuesta documental.
+- Integridad y precisión de las referencias.
+- Consistencia entre diferentes ejecuciones.
+
+La evaluación combinará resultados automáticos y revisión humana. Las métricas de cada dimensión se conservarán de forma independiente, evitando reducir la calidad global a una única puntuación.
+
+### 11.6. Pipeline de evaluación
+
+Se implementará un proceso de evaluación independiente del pipeline de producción.
+
+Sus componentes serán:
+
+1. **Evaluation Dataset:** conjunto de preguntas y resultados esperados.
+2. **Evaluation Runner:** ejecutor encargado de lanzar las consultas contra una configuración determinada del sistema.
+3. **Evaluation Metrics:** cálculo de las métricas de recuperación y evaluación de las respuestas.
+4. **Evaluation Results:** almacenamiento de los resultados obtenidos.
+
+Cada ejecución registrará, como mínimo:
+
+- Identificador de la evaluación.
+- Fecha de ejecución.
+- Versión del dataset utilizado.
+- Configuración del sistema evaluado.
+- Resultados de las métricas.
+- Resultados de la revisión humana, cuando exista.
+
+Los resultados se almacenarán en formato JSON para facilitar su consulta y comparación entre diferentes ejecuciones.
+
+### 11.7. Comparación de configuraciones
+
+El sistema de evaluación permitirá comparar distintas configuraciones del RAG utilizando el mismo conjunto de preguntas.
+
+Se podrán estudiar cambios en:
+
+- Estrategias y parámetros de chunking.
+- Modelos y configuraciones de embeddings.
+- Búsqueda híbrida y combinación mediante RRF.
+- Modelos y configuraciones de reranking.
+- Estructura y contenido de los prompts.
+- Presupuestos de historial y contexto RAG.
+- Modelos generativos.
+
+Para facilitar la interpretación de los resultados, los experimentos modificarán inicialmente una variable cada vez, manteniendo constantes el resto de los componentes.
+
+Se conservarán los resultados anteriores para identificar mejoras, regresiones y posibles cambios en el comportamiento del sistema.
+
+### 11.8. Tecnologías de evaluación
+
+Inicialmente se priorizarán implementaciones propias para las métricas de recuperación y la gestión de los resultados.
+
+No se incorporará obligatoriamente un framework externo de evaluación. Se podrán estudiar herramientas como Ragas o DeepEval para complementar la evaluación de generación cuando sea necesario.
+
+La revisión humana se mantendrá como parte de la estrategia, especialmente para evaluar la corrección técnica, la utilidad de las respuestas y la correspondencia entre afirmaciones y fuentes.
+
+La estrategia de evaluación permitirá validar progresivamente las decisiones arquitectónicas y ajustar los parámetros del RAG en función de los resultados experimentales.
+
+## 12. Decisiones pendientes
 
 Las siguientes cuestiones quedan fuera del alcance de este documento y deberán resolverse en sus correspondientes fases de desarrollo:
 
-- Estrategia de evaluación de la calidad del RAG.
+- Implementación del sistema de evaluación y preparación del conjunto inicial de pruebas.
 
 Estas decisiones deberán documentarse cuando se adopten, evitando introducir dependencias o funcionalidades futuras sin una necesidad concreta.
