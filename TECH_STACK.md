@@ -457,7 +457,65 @@ El sistema deberá validar la integridad de las referencias generadas:
 
 Esta validación garantiza que las referencias apunten a fragmentos existentes, pero no verifica semánticamente que el contenido de cada fragmento respalde la afirmación asociada.
 
-## 8. Arquitectura general
+## 8. Interfaz de usuario y comunicación con el sistema
+
+### 8.1. Arquitectura de interacción
+
+El sistema dispondrá inicialmente de una aplicación web independiente para interactuar con el asistente.
+
+La arquitectura separará la interfaz de usuario, la API de comunicación y el motor RAG, evitando dependencias entre la lógica del sistema y los clientes que lo utilicen.
+
+Se contemplan tres componentes principales:
+
+- **Frontend:** aplicación web encargada de gestionar la interacción con el usuario.
+- **Backend:** API responsable de gestionar las solicitudes, proyectos y conversaciones, así como coordinar el acceso al motor RAG.
+- **Motor RAG:** componente independiente encargado de la ingesta, recuperación, reranking y generación de respuestas.
+
+### 8.2. Tecnologías seleccionadas
+
+**Frontend: React + Vite**
+
+Se utilizará React para desarrollar la interfaz de usuario y Vite como entorno de desarrollo y construcción.
+
+La aplicación permitirá gestionar proyectos y conversaciones, enviar consultas al asistente y visualizar las respuestas generadas junto con sus referencias documentales.
+
+**Backend: FastAPI**
+
+Se utilizará FastAPI para implementar la API que permitirá la comunicación entre los clientes y el sistema.
+
+Será responsable de gestionar las solicitudes, identificar los proyectos y conversaciones correspondientes y coordinar la ejecución del motor RAG.
+
+**Comunicación: REST + Server-Sent Events (SSE)**
+
+Se utilizará una API REST para las operaciones generales del sistema.
+
+Para la generación de respuestas se utilizará Server-Sent Events (SSE), permitiendo transmitir progresivamente el contenido generado por el modelo al cliente.
+
+### 8.3. Desacoplamiento e integración con clientes externos
+
+La API se diseñará independientemente de la aplicación web, de manera que cualquier cliente compatible con sus contratos pueda utilizar el sistema.
+
+Aunque inicialmente se desarrollará una aplicación web, la arquitectura permitirá incorporar posteriormente integraciones con entornos de desarrollo (IDE), como Visual Studio Code.
+
+La API deberá admitir tanto consultas independientes como consultas acompañadas de contexto adicional proporcionado por el cliente.
+
+Este contexto podrá incluir información del entorno de desarrollo, como archivos seleccionados, fragmentos de código o rutas del proyecto.
+
+La implementación inicial se centrará en las consultas independientes. La incorporación de contexto externo se desarrollará cuando se aborde la integración con clientes adicionales.
+
+### 8.4. Principios de diseño
+
+La arquitectura seguirá los siguientes principios:
+
+- **Independencia del cliente:** el backend no dependerá de ninguna interfaz concreta.
+- **Desacoplamiento:** el motor RAG mantendrá su independencia respecto a FastAPI y React.
+- **Contratos explícitos:** las operaciones de la API definirán formatos de entrada y salida bien establecidos.
+- **Extensibilidad:** la incorporación de nuevos clientes no deberá requerir modificaciones en la lógica interna del motor RAG.
+- **Ejecución local:** inicialmente, tanto el backend como los modelos y componentes del sistema se ejecutarán localmente.
+
+La arquitectura resultante permitirá utilizar el mismo motor RAG desde diferentes interfaces sin duplicar su implementación.
+
+## 9. Arquitectura general
 
 El flujo principal del sistema será:
 
@@ -471,7 +529,7 @@ El flujo principal del sistema será:
 8. **Generación:** incorporación del contexto seleccionado al prompt del LLM.
 9. **Respuesta:** generación de una respuesta fundamentada en el contexto disponible.
 
-## 9. Stack tecnológico consolidado
+## 10. Stack tecnológico consolidado
 
 | Componente | Tecnología |
 |---|---|
@@ -493,11 +551,10 @@ El flujo principal del sistema será:
 | Modelo de reranking | Qwen3-Reranker-0.6B |
 | Biblioteca de reranking | Sentence Transformers (CrossEncoder) |
 
-## 10. Decisiones pendientes
+## 11. Decisiones pendientes
 
 Las siguientes cuestiones quedan fuera del alcance de este documento y deberán resolverse en sus correspondientes fases de desarrollo:
 
-- Interfaz de usuario y comunicación con el sistema.
 - Estrategia de evaluación de la calidad del RAG.
 
 Estas decisiones deberán documentarse cuando se adopten, evitando introducir dependencias o funcionalidades futuras sin una necesidad concreta.
