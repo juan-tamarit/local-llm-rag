@@ -12,7 +12,7 @@ responsabilidad concreta:
 
 -   **[Plan de implementación](PLAN_IMPLEMENTACION.md):** define las
     fases de desarrollo y el orden en el que deben abordarse.
--   **[Arquitectura](ARQUITECTURA.txt):** describe la organización del
+-   **[Arquitectura](ARQUITECTURA.md):** describe la organización del
     sistema, sus componentes y las relaciones entre ellos.
 -   **[Stack tecnológico](TECH_STACK.md):** recoge las tecnologías,
     modelos, bibliotecas y decisiones técnicas del proyecto.
