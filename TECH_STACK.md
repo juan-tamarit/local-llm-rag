@@ -200,9 +200,32 @@ Se utilizará para recuperar documentos mediante coincidencias léxicas.
 
 Resulta especialmente útil para búsquedas de identificadores, nombres de clases, métodos, variables y términos técnicos concretos.
 
-### 6.3. Búsqueda híbrida
+### 6.3. Búsqueda híbrida y combinación de resultados
 
-Se combinarán los resultados de la búsqueda semántica y léxica para obtener un conjunto de candidatos más completo.
+Se utilizará **Reciprocal Rank Fusion (RRF)** para combinar los resultados de la búsqueda semántica y léxica.
+
+Cada buscador recuperará inicialmente sus 20 fragmentos más relevantes:
+
+- Qdrant: búsqueda semántica mediante embeddings.
+- BM25: búsqueda léxica mediante coincidencia de términos.
+
+Los rankings se combinarán mediante RRF, utilizando la siguiente fórmula:
+
+\[
+RRF(d)=\sum_{r \in R}\frac{1}{k+rank_r(d)}
+\]
+
+Configuración inicial:
+
+- **Algoritmo:** Reciprocal Rank Fusion.
+- **Constante:** \(k=60\).
+- **Pesos:** iguales para ambos buscadores.
+- **Resultados por buscador:** 20.
+- **Resultados fusionados:** 20.
+
+Los fragmentos duplicados se identificarán mediante su `chunk_id` y se combinarán en una única entrada del ranking.
+
+El resultado de esta fase será un conjunto de 20 candidatos ordenados por relevancia híbrida, que se enviarán al Cross-Encoder para su reranking.
 
 
 ### 6.4. Reranking
@@ -270,7 +293,6 @@ El flujo principal del sistema será:
 
 Las siguientes cuestiones quedan fuera del alcance de este documento y deberán resolverse en sus correspondientes fases de desarrollo:
 
-- Estrategia de combinación de resultados de búsqueda híbrida.
 - Diseño de prompts y gestión del contexto.
 - Interfaz de usuario y comunicación con el sistema.
 - Estrategia de evaluación de la calidad del RAG.
