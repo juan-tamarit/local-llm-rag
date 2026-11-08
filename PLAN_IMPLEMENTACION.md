@@ -7,15 +7,35 @@ módulo responsable, su ubicación y las tecnologías previstas.
 
 ## Fase 0. Preparación del entorno
 
--   **Objetivo:** preparar el entorno de desarrollo y comprobar que el
-    hardware puede ejecutar los modelos seleccionados.
--   **Ubicación:** raíz del proyecto.
--   **Archivos principales:** `requirements.txt`.
--   **Tecnologías:** Python, PyTorch, CUDA, Hugging Face Transformers,
-    bitsandbytes.
--   **Resultado:** entorno reproducible y pruebas de carga e inferencia
-    de los modelos en la GPU objetivo.
+- **Objetivo:** preparar un entorno reproducible y comprobar que el hardware puede ejecutar operaciones de inferencia mediante GPU.
+- **Ubicación:** raíz del proyecto.
+- **Archivos principales:** `pyproject.toml`, `uv.lock`, `.python-version` y `.gitignore`. El entorno virtual se mantiene en `.venv/` y no se versiona.
+- **Sistema operativo:** Windows 11.
+- **Gestión del entorno:** uv.
+- **Tecnologías:** Python, PyTorch, CUDA, NumPy, Hugging Face Transformers, Accelerate y bitsandbytes.
+- **Hardware objetivo:** NVIDIA GeForce RTX 3050 Laptop GPU, 4 GB de VRAM, Compute Capability 8.6.
 
+### Estado
+
+Comprobaciones completadas:
+
+- uv instalado (versión 0.12.7).
+- Entorno virtual `.venv/` y archivo `uv.lock` creados.
+- PyTorch 2.14.1+cu130 instalado y CUDA 13.0 detectada.
+- GPU RTX 3050 Laptop detectada por PyTorch.
+- NumPy 2.4.6 instalado.
+- bitsandbytes 0.50.2 instalado.
+- Operación matricial FP16 ejecutada correctamente en CUDA.
+- Capa lineal NF4 ejecutada correctamente en CUDA.
+- Transformers y Accelerate instalados; la validación de carga de modelos queda pendiente.
+
+Pendiente:
+
+- Probar la carga e inferencia del modelo generativo seleccionado.
+- Medir el consumo de VRAM y validar la configuración de contexto en el hardware disponible.
+- Probar posteriormente los modelos de embeddings y reranking y definir una estrategia de gestión de memoria entre ellos.
+
+- **Resultado esperado:** entorno reproducible y validación experimental de la carga e inferencia de los modelos seleccionados en la GPU objetivo.
 ## Fase 1. Ingesta documental
 
 -   **Objetivo:** leer los formatos admitidos y extraer su contenido y

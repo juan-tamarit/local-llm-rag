@@ -20,10 +20,14 @@ El objetivo del RAG es proporcionar al modelo acceso a documentación técnica, 
 
 ### 2.1. Lenguaje y entorno de ejecución
 
-- **Python:** lenguaje principal del proyecto.
+- **Python:** lenguaje principal del proyecto. La versión se gestiona mediante `uv` y se fija en `.python-version`.
+- **uv:** gestor de entorno y dependencias. `pyproject.toml` define las dependencias del proyecto y `uv.lock` conserva las versiones resueltas.
 - **PyTorch:** framework de aprendizaje profundo y ejecución de modelos.
-- **CUDA:** aceleración por GPU cuando el hardware lo permita.
+- **CUDA:** aceleración por GPU. La instalación validada de PyTorch utiliza el runtime CUDA 13.0 (`cu130`).
 - **Hugging Face Transformers:** carga e inferencia de modelos generativos.
+- **bitsandbytes:** cuantización NF4 de 4 bits para modelos compatibles.
+
+El entorno de desarrollo actual utiliza Windows 11. El entorno virtual local se encuentra en `.venv/` y no debe versionarse.
 
 ### 2.2. Hardware objetivo
 
@@ -31,11 +35,30 @@ El desarrollo y las pruebas del sistema se realizarán inicialmente sobre el sig
 
 | Componente | Especificación |
 |---|---|
-| GPU | NVIDIA GTX 1060 de portátil |
+| GPU | NVIDIA GeForce RTX 3050 Laptop GPU |
+| Arquitectura | NVIDIA Ampere, Compute Capability 8.6 |
 | VRAM | 4 GB |
-| RAM | 16 GB (15,7 GB utilizables) |
+| RAM | 16 GB (15,7 GB utilizables, según la configuración registrada) |
+| Sistema operativo | Windows 11 |
 
 Estas especificaciones constituyen el entorno de referencia para seleccionar y validar los modelos y sus configuraciones de ejecución.
+
+#### Entorno de ejecución validado
+
+| Componente | Versión / resultado |
+|---|---|
+| Gestor de dependencias | uv 0.12.7 |
+| PyTorch | 2.14.1+cu130 |
+| Runtime CUDA de PyTorch | 13.0 |
+| CUDA disponible en PyTorch | Sí (`torch.cuda.is_available() == True`) |
+| NumPy | 2.4.6 |
+| bitsandbytes | 0.50.2 |
+| Operación FP16 en GPU | Validada |
+| Capa lineal NF4 en GPU | Validada |
+
+La capacidad CUDA de la GPU se ha comprobado como `(8, 6)`. Estas pruebas validan la ejecución de operaciones PyTorch FP16 y una capa NF4 en la GPU, pero no equivalen a validar la carga e inferencia de los modelos completos seleccionados.
+
+Las versiones de `transformers` y `accelerate` no se registran aquí porque todavía no se ha documentado su versión instalada.
 
 ### 2.3. Modelo generativo
 
@@ -51,7 +74,7 @@ Configuración inicial prevista:
 - **Longitud de contexto inicial:** 4.096 tokens.
 - **Licencia:** Apache 2.0.
 
-Esta configuración queda pendiente de validación mediante una prueba real de carga e inferencia en el hardware objetivo. Qwen2.5-Coder-3B-Instruct se mantiene como candidato experimental para futuras comparaciones, no como modelo seleccionado.
+La compatibilidad de PyTorch con CUDA y la ejecución de una capa NF4 se han validado en el hardware objetivo. La carga e inferencia del modelo completo siguen pendientes; en particular, debe comprobarse el consumo real de VRAM y si la configuración cabe en los 4 GB disponibles. Qwen2.5-Coder-3B-Instruct se mantiene como candidato experimental para futuras comparaciones, no como modelo seleccionado.
 ### 2.4. Framework RAG
 
 **LangChain**
@@ -175,7 +198,7 @@ Configuración inicial prevista:
 - **Contexto máximo del modelo:** hasta 32.768 tokens.
 - **Licencia:** Apache 2.0.
 
-La configuración queda pendiente de una prueba real de carga e inferencia en la NVIDIA GTX 1060 de 4 GB de VRAM. El tamaño de los fragmentos y el contexto efectivo de recuperación se definirán posteriormente en la decisión de chunking.
+La configuración queda pendiente de una prueba real de carga e inferencia en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM. El tamaño de los fragmentos y el contexto efectivo de recuperación se definirán posteriormente en la decisión de chunking.
 
 La generación de embeddings será independiente del modelo generativo. La selección de este modelo no implica utilizar embeddings distintos para código y documentación: inicialmente ambos tipos de contenido compartirán el mismo espacio vectorial.
 
@@ -258,7 +281,7 @@ Configuración inicial prevista:
 - **Longitud máxima inicial:** 1.024 tokens por pareja consulta-documento.
 - **Licencia:** Apache 2.0.
 
-La configuración queda pendiente de una prueba real de carga e inferencia en la NVIDIA GTX 1060 de 4 GB de VRAM.
+La configuración queda pendiente de una prueba real de carga e inferencia en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM.
 
 El objetivo es proporcionar al LLM únicamente los fragmentos más relevantes, mejorando la calidad del contexto utilizado durante la generación.
 
@@ -546,9 +569,13 @@ El flujo principal del sistema será:
 | Componente | Tecnología |
 |---|---|
 | Lenguaje | Python |
+| Gestión del entorno y dependencias | uv (`pyproject.toml` + `uv.lock`) |
 | Framework RAG | LangChain |
 | Deep Learning | PyTorch |
-| Inferencia LLM | Hugging Face Transformers |
+| Aceleración GPU | CUDA (runtime cu130 validado) |
+| Cuantización | bitsandbytes (NF4, 4 bits) |
+| Utilidades numéricas | NumPy |
+| Inferencia LLM | Hugging Face Transformers + Accelerate |
 | Modelo generativo | Qwen2.5-Coder-1.5B-Instruct |
 | Cuantización LLM | bitsandbytes (NF4, 4 bits) |
 | Aceleración | CUDA |
