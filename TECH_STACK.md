@@ -56,7 +56,7 @@ Estas especificaciones constituyen el entorno de referencia para seleccionar y v
 | Operación FP16 en GPU | Validada |
 | Capa lineal NF4 en GPU | Validada |
 
-La capacidad CUDA de la GPU se ha comprobado como `(8, 6)`. Estas pruebas validan la ejecución de operaciones PyTorch FP16 y una capa NF4 en la GPU, pero no equivalen a validar la carga e inferencia de los modelos completos seleccionados.
+La capacidad CUDA de la GPU se ha comprobado como `(8, 6)`. Se han validado operaciones PyTorch FP16, una capa NF4 y la carga e inferencia del modelo generativo seleccionado en la GPU.
 
 Las versiones de `transformers` y `accelerate` no se registran aquí porque todavía no se ha documentado su versión instalada.
 
@@ -74,7 +74,7 @@ Configuración inicial prevista:
 - **Longitud de contexto inicial:** 4.096 tokens.
 - **Licencia:** Apache 2.0.
 
-La compatibilidad de PyTorch con CUDA y la ejecución de una capa NF4 se han validado en el hardware objetivo. La carga e inferencia del modelo completo siguen pendientes; en particular, debe comprobarse el consumo real de VRAM y si la configuración cabe en los 4 GB disponibles. Qwen2.5-Coder-3B-Instruct se mantiene como candidato experimental para futuras comparaciones, no como modelo seleccionado.
+La carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` se han validado correctamente en la GPU objetivo utilizando cuantización NF4 de 4 bits y cálculo FP16, sin CPU offloading. La prueba ha generado código correctamente y ha registrado un pico de memoria asignada por PyTorch de aproximadamente 1,15 GB. Esta medición no representa necesariamente el consumo total de VRAM del proceso. La validación confirma que el modelo puede ejecutarse en el hardware disponible, aunque todavía queda pendiente evaluar la convivencia con los modelos de embeddings y reranking. Qwen2.5-Coder-3B-Instruct se mantiene como candidato experimental para futuras comparaciones, no como modelo seleccionado.
 ### 2.4. Framework RAG
 
 **LangChain**
@@ -198,7 +198,11 @@ Configuración inicial prevista:
 - **Contexto máximo del modelo:** hasta 32.768 tokens.
 - **Licencia:** Apache 2.0.
 
-La configuración queda pendiente de una prueba real de carga e inferencia en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM. El tamaño de los fragmentos y el contexto efectivo de recuperación se definirán posteriormente en la decisión de chunking.
+La carga e inferencia del modelo se han validado correctamente en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM mediante Sentence Transformers, utilizando FP16 y CUDA.
+
+La prueba generó embeddings de dimensión 1.024 para dos entradas de prueba (texto en español y código Python), con un pico de memoria asignada por PyTorch de aproximadamente 1,12 GB.
+
+La validación confirma el funcionamiento técnico del modelo en el hardware disponible. La calidad semántica de los embeddings queda pendiente de evaluación mediante un conjunto de consultas y documentos representativos del proyecto.
 
 La generación de embeddings será independiente del modelo generativo. La selección de este modelo no implica utilizar embeddings distintos para código y documentación: inicialmente ambos tipos de contenido compartirán el mismo espacio vectorial.
 
@@ -281,11 +285,15 @@ Configuración inicial prevista:
 - **Longitud máxima inicial:** 1.024 tokens por pareja consulta-documento.
 - **Licencia:** Apache 2.0.
 
-La configuración queda pendiente de una prueba real de carga e inferencia en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM.
+La carga e inferencia del modelo se han validado correctamente en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM mediante Sentence Transformers (CrossEncoder), utilizando FP16 y CUDA.
+
+La prueba se realizó con una longitud máxima de 1.024 tokens y batch size 1. Se comprobó la capacidad del modelo para ordenar tres documentos de prueba según su relevancia respecto a una consulta. El pico de memoria asignada por PyTorch fue de aproximadamente 1,12 GB.
+
+La validación confirma el funcionamiento técnico del modelo en el hardware disponible. La calidad del reranking deberá evaluarse posteriormente mediante un conjunto de consultas y documentos representativos del proyecto.
 
 El objetivo es proporcionar al LLM únicamente los fragmentos más relevantes, mejorando la calidad del contexto utilizado durante la generación.
 
-La gestión de memoria deberá contemplar que el modelo generativo, el modelo de embeddings y el Cross-Encoder no tienen por qué permanecer cargados simultáneamente en GPU.
+La gestión de memoria deberá contemplar que el modelo generativo, el modelo de embeddings y el Cross-Encoder no tienen por qué permanecer cargados simultáneamente en GPU.Las pruebas individuales han confirmado que los tres modelos pueden ejecutarse en la GPU objetivo. Sin embargo, todavía no se ha validado su convivencia simultánea ni el consumo conjunto de memoria. Se estudiará una estrategia de carga y descarga de modelos según las necesidades de cada operación.
 
 ## 7. Diseño de prompts y gestión del contexto
 

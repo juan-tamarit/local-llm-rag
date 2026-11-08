@@ -27,13 +27,17 @@ Comprobaciones completadas:
 - bitsandbytes 0.50.2 instalado.
 - Operación matricial FP16 ejecutada correctamente en CUDA.
 - Capa lineal NF4 ejecutada correctamente en CUDA.
-- Transformers y Accelerate instalados; la validación de carga de modelos queda pendiente.
+- Transformers y Accelerate instalados.
+- Sentence Transformers 6.2.0 instalado.
+- Carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` validadas correctamente en la RTX 3050 Laptop mediante cuantización NF4 de 4 bits y cálculo FP16, sin CPU offloading.
+- Generación de código comprobada mediante una prueba de inferencia. Pico de memoria asignada por PyTorch: aproximadamente 1,15 GB.
+- Carga e inferencia de `Qwen/Qwen3-Embedding-0.6B` validadas mediante Sentence Transformers, con FP16 y CUDA. Dimensión de salida: 1.024. Pico de memoria asignada por PyTorch: aproximadamente 1,12 GB.
+- Carga e inferencia de `Qwen/Qwen3-Reranker-0.6B` validadas mediante Sentence Transformers (CrossEncoder), con FP16 y CUDA. Longitud máxima: 1.024 tokens y batch size 1. Pico de memoria asignada por PyTorch: aproximadamente 1,12 GB.
 
 Pendiente:
 
-- Probar la carga e inferencia del modelo generativo seleccionado.
-- Medir el consumo de VRAM y validar la configuración de contexto en el hardware disponible.
-- Probar posteriormente los modelos de embeddings y reranking y definir una estrategia de gestión de memoria entre ellos.
+- Medir el consumo conjunto de VRAM y definir una estrategia de gestión de memoria entre los tres modelos.
+- Evaluar los límites prácticos de contexto y generación en el hardware disponible.
 
 - **Resultado esperado:** entorno reproducible y validación experimental de la carga e inferencia de los modelos seleccionados en la GPU objetivo.
 ## Fase 1. Ingesta documental
