@@ -70,9 +70,16 @@ Decisión de arquitectura definitiva:
 * BeautifulSoup: HTML.
 * markdown-it-py: Markdown.
 * Tree-sitter: código fuente.
+* **Estructura de archivos y clases:**
+  - `src/ingestion/base.py`: Define el modelo de datos estandarizado (`ExtractedDocument`, `DocumentMetadata`) y la interfaz abstracta lectora (`BaseReader`).
+  - `src/ingestion/pipeline.py`: Contiene el orquestador (`IngestionPipeline`) encargado de mapear extensiones de archivo a su lector especializado y procesar documentos o directorios.
+  - `src/ingestion/docling_reader.py`: Adaptador especializado para PDF y Office mediante Docling.
+  - `src/ingestion/html_reader.py`: Adaptador especializado para HTML mediante BeautifulSoup.
+  - `src/ingestion/markdown_reader.py`: Adaptador especializado para Markdown mediante markdown-it-py.
+  - `src/ingestion/code_reader.py`: Adaptador especializado para código fuente mediante Tree-sitter.
 
+* **Resultado:** Colección de objetos `ExtractedDocument` unificados con metadatos de procedencia, listos para la fase de chunking.
 
-* **Resultado:** contenido extraído y estructurado, con información de procedencia, preparado para su procesamiento.
 
 ## Fase 2. Procesamiento y chunking
 
