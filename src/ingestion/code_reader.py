@@ -44,7 +44,7 @@ class CodeReader(BaseReader):
         extra_info={
             "has_error": (
                 hasattr(tree.root_node, "has_error")
-                and tree.root_node.has_error()
+                and tree.root_node.has_error
             ),
         },
     )
