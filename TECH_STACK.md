@@ -74,7 +74,21 @@ Configuración inicial prevista:
 - **Longitud de contexto inicial:** 4.096 tokens.
 - **Licencia:** Apache 2.0.
 
-La carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` se han validado correctamente en la GPU objetivo utilizando cuantización NF4 de 4 bits y cálculo FP16, sin CPU offloading. La prueba ha generado código correctamente y ha registrado un pico de memoria asignada por PyTorch de aproximadamente 1,15 GB. Esta medición no representa necesariamente el consumo total de VRAM del proceso. La validación confirma que el modelo puede ejecutarse en el hardware disponible. La prueba conjunta con los modelos neuronales anteriores mostró que mantener todos los modelos en GPU deja prácticamente sin margen de VRAM; por ello, la configuración inicial ejecutará los embeddings en CPU y prescindirá del reranker. Qwen2.5-Coder-3B-Instruct se mantiene como candidato experimental para futuras comparaciones, no como modelo seleccionado.
+La carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` se han validado correctamente en la GPU objetivo utilizando cuantización NF4 de 4 bits y cálculo FP16, sin CPU offloading. La prueba ha generado código correctamente y ha registrado un pico de memoria asignada por PyTorch de aproximadamente 1,15 GB.
+
+La carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` se han validado correctamente en la GPU objetivo utilizando cuantización NF4 de 4 bits mediante `BitsAndBytesConfig` (FP16), sin CPU offloading. 
+
+Las pruebas de límites prácticos (Fase 0) confirmaron una gran estabilidad de la VRAM:
+- **Consumo base tras carga:** ~1,13 GB de VRAM asignada.
+- **Pruebas de contexto creciente:** 
+  - Contexto ~2.308 tokens: 1,38 GB VRAM reservada.
+  - Contexto ~11.428 tokens: 2,38 GB VRAM reservada.
+  - Contexto ~22.828 tokens: 3,58 GB VRAM reservada (por debajo del límite de 4 GB).
+  - Contexto ~45.628 tokens: 5,99 GB VRAM reservada (supera la longitud máxima nativa del modelo de 32.768 tokens).
+- **Pruebas de generación larga:** Generaciones continuas de 256, 512 y 1.024 tokens mantuvieron un consumo de VRAM asignada de 1,14 GB y reservada entre 1,20 y 1,23 GB.
+
+Estos resultados validan holgadamente los presupuestos operativos del proyecto (2.500 tokens para contexto RAG y 4.096 tokens para el presupuesto global de contexto).
+
 ### 2.4. Framework RAG
 
 **LangChain**

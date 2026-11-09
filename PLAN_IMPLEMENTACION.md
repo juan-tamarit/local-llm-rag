@@ -33,6 +33,12 @@ Comprobaciones completadas:
 * Generación de código comprobada mediante una prueba de inferencia. Pico de memoria asignada por PyTorch: aproximadamente 1,15 GB (1,13 GB en la prueba aislada).
 * Carga e inferencia individuales de `Qwen/Qwen3-Embedding-0.6B` validadas experimentalmente mediante Sentence Transformers, con FP16 y CUDA. Dimensión de salida: 1.024. Pico de memoria asignada por PyTorch: aproximadamente 1,12 GB.
 * Carga e inferencia individuales de `Qwen/Qwen3-Reranker-0.6B` validadas experimentalmente mediante Sentence Transformers (CrossEncoder), con FP16 y CUDA. Longitud máxima: 1.024 tokens y batch size 1. Pico de memoria asignada por PyTorch: aproximadamente 1,12 GB.
+* Carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` validadas correctamente en la RTX 3050 Laptop mediante cuantización NF4 de 4 bits (con `BitsAndBytesConfig`) y cálculo FP16, sin CPU offloading.
+* **Prueba de límites de contexto y generación completada con éxito (Fase 0 finalizada):**
+  - Consumo inicial tras carga: ~1,13 GB de VRAM asignada / 1,18 GB reservada.
+  - Contexto de entrada hasta ~22.828 tokens ejecutado dentro de la VRAM física de la GPU (3,58 GB reservados).
+  - Contexto de ~45.628 tokens registró una advertencia de Transformers por superar la secuencia máxima nativa (32.768 tokens).
+  - Pruebas de generación de hasta 1.024 tokens completadas de forma fluida y estable con VRAM reservada en 1,23 GB.
 
 Desviación experimental y prueba conjunta de VRAM:
 
@@ -53,10 +59,7 @@ Decisión de arquitectura definitiva:
 * **Embeddings:** Se sustituye `Qwen/Qwen3-Embedding-0.6B` por `intfloat/multilingual-e5-small`, ejecutándose inicialmente en CPU para reservar VRAM al generador.
 * **Reranking:** Se excluye el modelo de reranking (`Qwen/Qwen3-Reranker-0.6B`) de la implementación inicial para optimizar recursos.
 
-Pendiente:
-
-* Evaluar los límites prácticos de contexto y generación en el hardware disponible.
-* **Resultado esperado:** entorno reproducible, caracterización precisa del consumo de VRAM y decisión de arquitectura de modelos validada para la implementación del proyecto.
+* **Estado de la fase:** FINALIZADA. Todos los límites de VRAM, contexto y generación han sido evaluados y la arquitectura de modelos queda formalmente validada.
 
 ## Fase 1. Ingesta documental
 
