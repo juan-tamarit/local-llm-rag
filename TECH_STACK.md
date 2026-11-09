@@ -105,10 +105,13 @@ El sistema admitirá distintos formatos de entrada. Se utilizarán herramientas 
 
 | Formato | Tecnología | Responsabilidad |
 |---|---|---|
-| PDF y documentos Office | Docling | Extracción de contenido y estructura documental. |
+| PDF  | pymupdf | Extracción de contenido y estructura documental. |
+|documentos Office|python-docx y python-pptx | Extracción de contenido y estructura documental.|
 | HTML | BeautifulSoup | Análisis del DOM y extracción del contenido relevante. |
 | Markdown | markdown-it-py | Análisis y conservación de la estructura Markdown. |
 | Código fuente | Tree-sitter | Análisis sintáctico y extracción de estructuras de código. |
+
+* **Nota de Ingesta:** Se prescinde de Docling, empleando en su lugar adaptadores específicos modulares y de alta compatibilidad (`pymupdf` para PDFs, `python-docx` para Word y `python-pptx` para PowerPoint).
 
 ### Criterios de procesamiento
 

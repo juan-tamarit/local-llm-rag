@@ -84,8 +84,10 @@ Decisión de arquitectura definitiva:
   - `src/ingestion/code_reader.py`: Adaptador especializado para código fuente mediante Tree-sitter.
   - Descartado:
     - `src/ingestion/docling_reader.py`: Adaptador especializado para PDF y Office mediante Docling. Por no poder incluir Docling
+* **Nota de Adaptación Tecnológica:** Se ha sustituido *Docling* por adaptadores especializados ligeros (`pymupdf`, `python-docx` y `python-pptx`) para garantizar una compatibilidad estricta con Python 3.11, el ecosistema CUDA y los límites de hardware locales sin conflictos de dependencias.
 
 * **Resultado:** Colección de objetos `ExtractedDocument` unificados con metadatos de procedencia, listos para la fase de chunking.
+* **Estado de la fase:** FINAL
 
 
 ## Fase 2. Procesamiento y chunking
