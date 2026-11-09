@@ -4,11 +4,19 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "accelerate>=1.15.0",
+    "beautifulsoup4>=4.15.0",
     "bitsandbytes>=0.50.2",
+    "certifi>=2022.12.7",
+    "huggingface-hub>=2.4.0",
+    "markdown-it-py>=4.2.0",
     "numpy>=2.4.6",
+    "pymupdf>=2.1",
+    "pytest>=9.2.0",
     "sentence-transformers>=6.2.0",
     "torch>=2.14.1",
     "transformers>=5.22.2",
+    "tree-sitter>=0.26.0",
+    "tree-sitter-python>=0.25.0",
 ]
 
 [tool.uv.sources]

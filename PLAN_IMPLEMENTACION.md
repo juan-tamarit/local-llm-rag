@@ -66,17 +66,24 @@ Decisión de arquitectura definitiva:
 * **Objetivo:** leer los formatos admitidos y extraer su contenido y estructura.
 * **Ubicación:** `src/ingestion/`.
 * **Tecnologías:**
-* Docling: PDF y documentos Office.
-* BeautifulSoup: HTML.
-* markdown-it-py: Markdown.
-* Tree-sitter: código fuente.
+  * BeautifulSoup: HTML.
+  * markdown-it-py: Markdown.
+  * Tree-sitter: código fuente.
+  * PyMuPDF: Extracción rápida de PDF
+  * python-docx / python-pptx: Extracción de documentos Office (`.docx`, `.pptx`)
+  * Descartado:
+    * Docling: PDF y documentos Office. Lamentablemente no es compatible con nuestra versión de transformers
+
 * **Estructura de archivos y clases:**
   - `src/ingestion/base.py`: Define el modelo de datos estandarizado (`ExtractedDocument`, `DocumentMetadata`) y la interfaz abstracta lectora (`BaseReader`).
   - `src/ingestion/pipeline.py`: Contiene el orquestador (`IngestionPipeline`) encargado de mapear extensiones de archivo a su lector especializado y procesar documentos o directorios.
-  - `src/ingestion/docling_reader.py`: Adaptador especializado para PDF y Office mediante Docling.
+  - `src/ingestion/pdf_reader.py`: Lector de PDF.
+  - `src/ingestion/office_reader.py`: Lector unificado o separado para archivos Office (`.docx` / `.pptx`).
   - `src/ingestion/html_reader.py`: Adaptador especializado para HTML mediante BeautifulSoup.
   - `src/ingestion/markdown_reader.py`: Adaptador especializado para Markdown mediante markdown-it-py.
   - `src/ingestion/code_reader.py`: Adaptador especializado para código fuente mediante Tree-sitter.
+  - Descartado:
+    - `src/ingestion/docling_reader.py`: Adaptador especializado para PDF y Office mediante Docling. Por no poder incluir Docling
 
 * **Resultado:** Colección de objetos `ExtractedDocument` unificados con metadatos de procedencia, listos para la fase de chunking.
 
