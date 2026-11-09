@@ -74,7 +74,7 @@ Configuración inicial prevista:
 - **Longitud de contexto inicial:** 4.096 tokens.
 - **Licencia:** Apache 2.0.
 
-La carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` se han validado correctamente en la GPU objetivo utilizando cuantización NF4 de 4 bits y cálculo FP16, sin CPU offloading. La prueba ha generado código correctamente y ha registrado un pico de memoria asignada por PyTorch de aproximadamente 1,15 GB. Esta medición no representa necesariamente el consumo total de VRAM del proceso. La validación confirma que el modelo puede ejecutarse en el hardware disponible, aunque todavía queda pendiente evaluar la convivencia con los modelos de embeddings y reranking. Qwen2.5-Coder-3B-Instruct se mantiene como candidato experimental para futuras comparaciones, no como modelo seleccionado.
+La carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` se han validado correctamente en la GPU objetivo utilizando cuantización NF4 de 4 bits y cálculo FP16, sin CPU offloading. La prueba ha generado código correctamente y ha registrado un pico de memoria asignada por PyTorch de aproximadamente 1,15 GB. Esta medición no representa necesariamente el consumo total de VRAM del proceso. La validación confirma que el modelo puede ejecutarse en el hardware disponible. La prueba conjunta con los modelos neuronales anteriores mostró que mantener todos los modelos en GPU deja prácticamente sin margen de VRAM; por ello, la configuración inicial ejecutará los embeddings en CPU y prescindirá del reranker. Qwen2.5-Coder-3B-Instruct se mantiene como candidato experimental para futuras comparaciones, no como modelo seleccionado.
 ### 2.4. Framework RAG
 
 **LangChain**
@@ -175,36 +175,33 @@ Los metadatos permitirán localizar el contenido original, reconstruir su contex
 
 #### Consideraciones generales
 
-- El tamaño de los chunks deberá ser compatible con los límites de los modelos de embeddings y reranking.
-- La longitud máxima de entrada del Cross-Encoder incluirá tanto la consulta como el fragmento.
+- El tamaño de los chunks deberá ser compatible con el límite de entrada del modelo de embeddings.
 - Se evitará duplicar contenido innecesariamente.
 - La fragmentación deberá preservar la coherencia semántica y estructural.
 
 
 ## 4. Embeddings
 
-**Modelo: `Qwen/Qwen3-Embedding-0.6B`**
+**Modelo inicial: `intfloat/multilingual-e5-small`**
 
-Se utilizará como modelo inicial para transformar documentos y consultas en representaciones vectoriales. Se selecciona por su capacidad multilingüe y su adecuación a tareas de recuperación que combinan código fuente, documentación técnica y consultas en lenguaje natural.
+Se utilizará para transformar documentos y consultas en representaciones vectoriales. Se selecciona como alternativa ligera al modelo Qwen3-Embedding-0.6B probado inicialmente, con el objetivo de reducir el consumo de memoria y reservar la GPU para el modelo generativo.
 
-Configuración inicial prevista:
+Configuración inicial:
 
 - **Biblioteca:** Sentence Transformers.
 - **Backend:** PyTorch.
-- **Precisión:** FP16.
-- **Dispositivo:** GPU mediante CUDA.
-- **Dimensiones de salida:** 1.024.
-- **Batch size inicial:** 1-4, sujeto a validación de memoria.
-- **Contexto máximo del modelo:** hasta 32.768 tokens.
-- **Licencia:** Apache 2.0.
+- **Precisión:** FP32 inicialmente, salvo que las pruebas justifiquen otra configuración.
+- **Dispositivo:** CPU.
+- **Dimensiones de salida:** 384.
+- **Modelo:** `intfloat/multilingual-e5-small`.
 
-La carga e inferencia del modelo se han validado correctamente en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM mediante Sentence Transformers, utilizando FP16 y CUDA.
+La elección de este modelo y su ejecución en CPU constituye la configuración inicial propuesta para el sistema. Todavía no se ha validado su calidad de recuperación con el conjunto de evaluación del proyecto ni se ha medido su rendimiento en el hardware objetivo.
 
-La prueba generó embeddings de dimensión 1.024 para dos entradas de prueba (texto en español y código Python), con un pico de memoria asignada por PyTorch de aproximadamente 1,12 GB.
+El modelo anterior, `Qwen/Qwen3-Embedding-0.6B`, sí se ha probado técnicamente en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM mediante Sentence Transformers, FP16 y CUDA. La prueba generó embeddings de dimensión 1.024 para dos entradas (texto en español y código Python), con un pico de memoria asignada por PyTorch de aproximadamente 1,12 GB. Esta prueba confirma su funcionamiento, pero no justifica mantenerlo en la configuración inicial: la prueba conjunta mostró que los tres modelos neuronales ocupaban prácticamente toda la VRAM disponible.
 
-La validación confirma el funcionamiento técnico del modelo en el hardware disponible. La calidad semántica de los embeddings queda pendiente de evaluación mediante un conjunto de consultas y documentos representativos del proyecto.
+La generación de embeddings será independiente del modelo generativo. Inicialmente, código y documentación compartirán el mismo espacio vectorial. Se respetará el formato de entrada recomendado por el modelo para consultas y documentos (prefijos `query:` y `passage:`).
 
-La generación de embeddings será independiente del modelo generativo. La selección de este modelo no implica utilizar embeddings distintos para código y documentación: inicialmente ambos tipos de contenido compartirán el mismo espacio vectorial.
+La selección podrá revisarse mediante la evaluación de Retrieval, comparando la recuperación semántica, BM25 y la combinación híbrida.
 
 ## 5. Almacenamiento vectorial
 
@@ -263,37 +260,20 @@ Configuración inicial:
 
 Los fragmentos duplicados se identificarán mediante su `chunk_id` y se combinarán en una única entrada del ranking.
 
-El resultado de esta fase será un conjunto de 20 candidatos ordenados por relevancia híbrida, que se enviarán al Cross-Encoder para su reranking.
+El resultado de esta fase será un conjunto de hasta 20 candidatos ordenados por relevancia híbrida. En la configuración inicial, estos resultados se utilizarán directamente para construir el contexto RAG, sin una etapa neuronal de reranking.
 
 
 ### 6.4. Reranking
 
-**Modelo: `Qwen/Qwen3-Reranker-0.6B`**
+**No se incorporará un modelo de reranking en la primera versión.**
 
-Se utilizará para volver a ordenar los fragmentos recuperados durante la fase de búsqueda híbrida, evaluando conjuntamente la consulta original y cada fragmento candidato.
+La recuperación inicial combinará búsqueda semántica mediante Qdrant y búsqueda léxica mediante BM25. RRF fusionará ambos rankings y proporcionará los candidatos que se utilizarán para construir el contexto.
 
-Se selecciona por su capacidad multilingüe y su adecuación a tareas de recuperación de código fuente y documentación técnica.
+Esta decisión responde a las limitaciones de memoria del hardware disponible. En la prueba conjunta, el modelo generativo, el modelo de embeddings Qwen3 y el reranker Qwen3 llegaron a ocupar aproximadamente 3,37 GB de memoria asignada por PyTorch sobre una GPU de 4 GB, sin dejar margen práctico para otras operaciones.
 
-Configuración inicial prevista:
+El reranking queda como mejora opcional. Se estudiará su incorporación únicamente si la evaluación demuestra que la búsqueda híbrida no ordena los resultados con calidad suficiente y que el beneficio justifica su coste de memoria y latencia. La arquitectura deberá mantener desacoplada esta etapa para poder incorporarla posteriormente sin modificar el resto del pipeline.
 
-- **Biblioteca:** Sentence Transformers.
-- **Clase:** CrossEncoder.
-- **Backend:** PyTorch.
-- **Precisión:** FP16.
-- **Dispositivo:** GPU mediante CUDA.
-- **Batch size inicial:** 1.
-- **Longitud máxima inicial:** 1.024 tokens por pareja consulta-documento.
-- **Licencia:** Apache 2.0.
-
-La carga e inferencia del modelo se han validado correctamente en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM mediante Sentence Transformers (CrossEncoder), utilizando FP16 y CUDA.
-
-La prueba se realizó con una longitud máxima de 1.024 tokens y batch size 1. Se comprobó la capacidad del modelo para ordenar tres documentos de prueba según su relevancia respecto a una consulta. El pico de memoria asignada por PyTorch fue de aproximadamente 1,12 GB.
-
-La validación confirma el funcionamiento técnico del modelo en el hardware disponible. La calidad del reranking deberá evaluarse posteriormente mediante un conjunto de consultas y documentos representativos del proyecto.
-
-El objetivo es proporcionar al LLM únicamente los fragmentos más relevantes, mejorando la calidad del contexto utilizado durante la generación.
-
-La gestión de memoria deberá contemplar que el modelo generativo, el modelo de embeddings y el Cross-Encoder no tienen por qué permanecer cargados simultáneamente en GPU.Las pruebas individuales han confirmado que los tres modelos pueden ejecutarse en la GPU objetivo. Sin embargo, todavía no se ha validado su convivencia simultánea ni el consumo conjunto de memoria. Se estudiará una estrategia de carga y descarga de modelos según las necesidades de cada operación.
+La prueba individual de `Qwen/Qwen3-Reranker-0.6B` sí confirmó su funcionamiento técnico en GPU mediante Sentence Transformers (CrossEncoder), FP16, longitud máxima de 1.024 tokens y batch size 1. Ordenó correctamente tres documentos de prueba y registró un pico de memoria asignada por PyTorch de aproximadamente 1,12 GB. Esta validación no implica que el modelo forme parte del stack inicial ni demuestra una mejora de calidad en el conjunto de evaluación del proyecto.
 
 ## 7. Diseño de prompts y gestión del contexto
 
@@ -382,18 +362,17 @@ Criterios:
 - No se recuperarán mensajes antiguos saltándose intercambios más recientes.
 - El historial tendrá un presupuesto máximo inicial de 500 tokens.
 
-El presupuesto podrá ajustarse posteriormente mediante pruebas.El presupuesto inicial de 500 tokens se considerará un valor experimental. Su adecuación podrá evaluarse mediante la comparación de diferentes configuraciones de historial, analizando su impacto en la continuidad de las conversaciones y la calidad de las respuestas.
+El presupuesto inicial de 500 tokens se considerará un valor experimental. Su adecuación podrá evaluarse mediante la comparación de diferentes configuraciones de historial, analizando su impacto en la continuidad de las conversaciones y la calidad de las respuestas.
 
 ### 7.5. Gestión del contexto RAG
 
 El contexto RAG tendrá un presupuesto máximo inicial de 2.500 tokens.
 
-Después de la búsqueda híbrida y el reranking, se seleccionarán los fragmentos más relevantes respetando los siguientes criterios:
+Después de la búsqueda híbrida, se seleccionarán los fragmentos más relevantes respetando los siguientes criterios:
 
 - Se recuperarán inicialmente los 20 mejores candidatos de la búsqueda híbrida.
-- Los candidatos se ordenarán mediante el Cross-Encoder.
+- Los candidatos conservarán el orden obtenido mediante RRF.
 - Se utilizarán como máximo cinco fragmentos para construir el contexto.
-- No se establecerá inicialmente un umbral mínimo de puntuación del CrossEncoder.
 - La selección respetará el presupuesto máximo de 2.500 tokens.
 
 Si un fragmento no cabe completo en el presupuesto disponible, se intentará reducirlo respetando su estructura semántica.
@@ -404,7 +383,7 @@ Criterios de truncamiento:
 - Documentación: conservar párrafos, listas y secciones completas siempre que sea posible.
 - Si no se puede realizar un recorte coherente, se descartará el fragmento y se continuará con el siguiente candidato.
 
-El objetivo es evitar cortes arbitrarios que puedan eliminar información necesaria para interpretar el contenido.Los límites iniciales de 2.500 tokens para el contexto RAG y un máximo de cinco fragmentos se considerarán parámetros experimentales.
+El objetivo es evitar cortes arbitrarios que puedan eliminar información necesaria para interpretar el contenido. Los límites iniciales de 2.500 tokens para el contexto RAG y un máximo de cinco fragmentos se considerarán parámetros experimentales.
 
 Su adecuación se evaluará mediante el sistema definido en el apartado 11, analizando el impacto de diferentes presupuestos y cantidades de fragmentos sobre la calidad de la recuperación y las respuestas generadas.
 
@@ -496,7 +475,7 @@ El sistema deberá validar la integridad de las referencias generadas:
 - No se admitirán referencias a fragmentos inexistentes.
 - La lista final de fuentes se construirá a partir de los fragmentos realmente citados.
 
-Esta validación garantiza que las referencias apunten a fragmentos existentes, pero no verifica semánticamente que el contenido de cada fragmento respalde la afirmación asociada.La correspondencia entre las referencias y las afirmaciones realizadas se evaluará mediante la dimensión Citation Accuracy definida en el apartado 11.
+Esta validación garantiza que las referencias apunten a fragmentos existentes, pero no verifica semánticamente que el contenido de cada fragmento respalde la afirmación asociada. La correspondencia entre las referencias y las afirmaciones realizadas se evaluará mediante la dimensión Citation Accuracy definida en el apartado 11.
 
 La validación estructural de las referencias y la evaluación de su correspondencia semántica se considerarán comprobaciones independientes.
 
@@ -512,7 +491,7 @@ Se contemplan tres componentes principales:
 
 - **Frontend:** aplicación web encargada de gestionar la interacción con el usuario.
 - **Backend:** API responsable de gestionar las solicitudes, proyectos y conversaciones, así como coordinar el acceso al motor RAG.
-- **Motor RAG:** componente independiente encargado de la ingesta, recuperación, reranking y generación de respuestas.
+- **Motor RAG:** componente independiente encargado de la ingesta, recuperación, selección de contexto y generación de respuestas. El reranking podrá incorporarse como etapa opcional futura.
 
 ### 8.2. Tecnologías seleccionadas
 
@@ -568,7 +547,7 @@ El flujo principal del sistema será:
 4. **Embeddings:** generación de representaciones vectoriales.
 5. **Indexación:** almacenamiento de vectores y metadatos en Qdrant.
 6. **Retrieval:** recuperación híbrida de fragmentos relevantes.
-7. **Reranking:** clasificación de los fragmentos recuperados.
+7. **Selección de contexto:** selección de los fragmentos mejor posicionados por RRF dentro del presupuesto disponible.
 8. **Generación:** incorporación del contexto seleccionado al prompt del LLM.
 9. **Respuesta:** generación de una respuesta fundamentada en el contexto disponible.
 
@@ -576,7 +555,7 @@ El flujo principal del sistema será:
 
 | Componente | Tecnología |
 |---|---|
-| Lenguaje | Python |
+| Lenguaje | Python 3.11 |
 | Gestión del entorno y dependencias | uv (`pyproject.toml` + `uv.lock`) |
 | Framework RAG | LangChain |
 | Deep Learning | PyTorch |
@@ -584,19 +563,23 @@ El flujo principal del sistema será:
 | Cuantización | bitsandbytes (NF4, 4 bits) |
 | Utilidades numéricas | NumPy |
 | Inferencia LLM | Hugging Face Transformers + Accelerate |
-| Modelo generativo | Qwen2.5-Coder-1.5B-Instruct |
+| Modelo generativo | `Qwen/Qwen2.5-Coder-1.5B-Instruct` |
 | Cuantización LLM | bitsandbytes (NF4, 4 bits) |
-| Aceleración | CUDA |
-| PDF / Office | Docling |
-| HTML | BeautifulSoup |
-| Markdown | markdown-it-py |
-| Código fuente | Tree-sitter |
-| Modelo de embeddings | Qwen3-Embedding-0.6B |
+| Ingesta PDF / Office | Docling |
+| Ingesta HTML | BeautifulSoup |
+| Ingesta Markdown | markdown-it-py |
+| Análisis de código | Tree-sitter |
+| Modelo de embeddings | `intfloat/multilingual-e5-small` |
 | Biblioteca de embeddings | Sentence Transformers |
-| Vector Database | Qdrant |
+| Ejecución de embeddings | PyTorch en CPU (configuración inicial) |
+| Base de datos vectorial | Qdrant |
 | Búsqueda léxica | rank-bm25 |
-| Modelo de reranking | Qwen3-Reranker-0.6B |
-| Biblioteca de reranking | Sentence Transformers (CrossEncoder) |
+| Fusión de resultados | Reciprocal Rank Fusion (RRF) |
+| Reranking | No incluido inicialmente; etapa opcional futura |
+| Backend API | FastAPI |
+| Frontend | React + Vite |
+| Comunicación | REST + Server-Sent Events (SSE) |
+
 
 ## 11. Estrategia de evaluación de la calidad del RAG
 
@@ -656,7 +639,7 @@ La evaluación permitirá analizar las distintas etapas del proceso:
 - Búsqueda semántica mediante Qdrant.
 - Búsqueda léxica mediante BM25.
 - Combinación de resultados mediante RRF.
-- Reranking mediante Cross-Encoder.
+- Posible incorporación futura de reranking.
 
 El objetivo será identificar la aportación de cada componente y detectar posibles problemas de recuperación u ordenamiento.
 
@@ -728,7 +711,7 @@ Se podrán estudiar cambios en:
 - Estrategias y parámetros de chunking.
 - Modelos y configuraciones de embeddings.
 - Búsqueda híbrida y combinación mediante RRF.
-- Modelos y configuraciones de reranking.
+- Incorporación y configuración de una etapa de reranking.
 - Estructura y contenido de los prompts.
 - Presupuestos de historial y contexto RAG.
 - Modelos generativos.
@@ -749,8 +732,13 @@ La estrategia de evaluación permitirá validar progresivamente las decisiones a
 
 ## 12. Decisiones pendientes
 
-Las siguientes cuestiones quedan fuera del alcance de este documento y deberán resolverse en sus correspondientes fases de desarrollo:
+Las siguientes cuestiones deberán resolverse mediante pruebas y evaluación:
 
-- Implementación del sistema de evaluación y preparación del conjunto inicial de pruebas.
+- Preparar el conjunto inicial de evaluación con consultas representativas de código y documentación.
+- Validar la calidad de recuperación de `intfloat/multilingual-e5-small` frente a BM25 y frente a la búsqueda híbrida.
+- Medir el tiempo de generación de embeddings en CPU y su impacto en la ingesta.
+- Ajustar los parámetros de chunking y recuperación a partir de las métricas obtenidas.
+- Evaluar si la búsqueda híbrida necesita una etapa de reranking. No se seleccionará un modelo de reranking hasta que exista evidencia de que aporta una mejora suficiente.
+- Evaluar los límites de contexto y generación del modelo generativo con consultas representativas.
 
-Estas decisiones deberán documentarse cuando se adopten, evitando introducir dependencias o funcionalidades futuras sin una necesidad concreta.
+Las pruebas técnicas de carga e inferencia de los modelos anteriores se conservan como evidencia experimental, pero no implican que esos modelos formen parte de la configuración inicial seleccionada.
