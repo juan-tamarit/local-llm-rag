@@ -1,2 +1,5 @@
-__pycahce__/
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
 .venv/
