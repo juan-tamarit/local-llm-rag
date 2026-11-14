@@ -24,7 +24,7 @@ class Embedder:
         logger.info("Cargando '%s' en '%s'...", model_name, device)
         self.model = SentenceTransformer(model_name, device=device)
         self.model.max_seq_length = MAX_SEQ_LENGTH
-        self.dimension: int = self.model.get_sentence_embedding_dimension()
+        self.dimension: int = self.model.get_embedding_dimension()
         logger.info("Modelo cargado (dimensión %d).", self.dimension)
 
     def count_tokens(self, text: str, prefix: str = "passage: ") -> int:
