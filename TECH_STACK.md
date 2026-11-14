@@ -58,7 +58,7 @@ Estas especificaciones constituyen el entorno de referencia para seleccionar y v
 
 La capacidad CUDA de la GPU se ha comprobado como `(8, 6)`. Se han validado operaciones PyTorch FP16, una capa NF4 y la carga e inferencia del modelo generativo seleccionado en la GPU.
 
-Las versiones de `transformers` y `accelerate` no se registran aquí porque todavía no se ha documentado su versión instalada.
+Entorno Python: 3.11. Sentence Transformers 6.2.0 está instalado y validado. `transformers` y `accelerate` están instalados, pero su versión exacta todavía no se ha registrado aquí (consultar `uv.lock`).
 
 ### 2.3. Modelo generativo
 
@@ -74,9 +74,7 @@ Configuración inicial prevista:
 - **Longitud de contexto inicial:** 4.096 tokens.
 - **Licencia:** Apache 2.0.
 
-La carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` se han validado correctamente en la GPU objetivo utilizando cuantización NF4 de 4 bits y cálculo FP16, sin CPU offloading. La prueba ha generado código correctamente y ha registrado un pico de memoria asignada por PyTorch de aproximadamente 1,15 GB.
-
-La carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` se han validado correctamente en la GPU objetivo utilizando cuantización NF4 de 4 bits mediante `BitsAndBytesConfig` (FP16), sin CPU offloading. 
+La carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` se han validado correctamente en la GPU objetivo utilizando cuantización NF4 de 4 bits (mediante `BitsAndBytesConfig`) y cálculo FP16, sin CPU offloading. La prueba ha generado código correctamente y ha registrado un pico de memoria asignada por PyTorch de aproximadamente 1,15 GB.
 
 Las pruebas de límites prácticos (Fase 0) confirmaron una gran estabilidad de la VRAM:
 - **Consumo base tras carga:** ~1,13 GB de VRAM asignada.
@@ -112,6 +110,8 @@ El sistema admitirá distintos formatos de entrada. Se utilizarán herramientas 
 | Código fuente | Tree-sitter | Análisis sintáctico y extracción de estructuras de código. |
 
 * **Nota de Ingesta:** Se prescinde de Docling, empleando en su lugar adaptadores específicos modulares y de alta compatibilidad (`pymupdf` para PDFs, `python-docx` para Word y `python-pptx` para PowerPoint).
+
+> **Estado:** la ingesta (Fase 1, `src/ingestion/`) y el procesamiento y chunking (Fase 2, `src/processing/`) están implementados. El chunking de código basado en AST utiliza actualmente `tree-sitter-python`, por lo que solo cubre código Python; otros lenguajes se tratarán con el chunker de texto hasta que se añadan sus gramáticas.
 
 ### Criterios de procesamiento
 
@@ -359,7 +359,7 @@ Se distinguirán dos situaciones:
 
 En ambos casos podrá recurrir a sus conocimientos generales, diferenciándolos de la información documental.
 
-La evaluación de la suficiencia del contexto corresponderá inicialmente al LLM. No se establecerá un umbral mínimo de puntuación del CrossEncoder para determinar automáticamente si los resultados son relevantes.
+La evaluación de la suficiencia del contexto corresponderá inicialmente al LLM. No se establecerá un umbral mínimo de puntuación de recuperación (similitud semántica, BM25 o RRF) para determinar automáticamente si los resultados son relevantes.
 
 Esta decisión se validará mediante el sistema de evaluación, prestando especial atención a la capacidad del modelo para reconocer información insuficiente y diferenciar el conocimiento documental de sus conocimientos generales.
 
@@ -582,12 +582,13 @@ El flujo principal del sistema será:
 | Inferencia LLM | Hugging Face Transformers + Accelerate |
 | Modelo generativo | `Qwen/Qwen2.5-Coder-1.5B-Instruct` |
 | Cuantización LLM | bitsandbytes (NF4, 4 bits) |
-| Ingesta PDF / Office | Docling |
+| Ingesta PDF | pymupdf |
+| Ingesta Office (`.docx`, `.pptx`) | python-docx + python-pptx |
 | Ingesta HTML | BeautifulSoup |
 | Ingesta Markdown | markdown-it-py |
 | Análisis de código | Tree-sitter |
 | Modelo de embeddings | `intfloat/multilingual-e5-small` |
-| Biblioteca de embeddings | Sentence Transformers |
+| Biblioteca de embeddings | Sentence Transformers 6.2.0 |
 | Ejecución de embeddings | PyTorch en CPU (configuración inicial) |
 | Base de datos vectorial | Qdrant |
 | Búsqueda léxica | rank-bm25 |
@@ -756,6 +757,23 @@ Las siguientes cuestiones deberán resolverse mediante pruebas y evaluación:
 - Medir el tiempo de generación de embeddings en CPU y su impacto en la ingesta.
 - Ajustar los parámetros de chunking y recuperación a partir de las métricas obtenidas.
 - Evaluar si la búsqueda híbrida necesita una etapa de reranking. No se seleccionará un modelo de reranking hasta que exista evidencia de que aporta una mejora suficiente.
-- Evaluar los límites de contexto y generación del modelo generativo con consultas representativas.
+
+Resuelto: los límites prácticos de contexto y generación del modelo generativo se evaluaron en la Fase 0 (ver sección 2.3). Queda pendiente únicamente contrastarlos con consultas RAG representativas durante la evaluación.
 
 Las pruebas técnicas de carga e inferencia de los modelos anteriores se conservan como evidencia experimental, pero no implican que esos modelos formen parte de la configuración inicial seleccionada.
+
+## 13. Estado de implementación
+
+| Fase | Componente | Estado |
+|---|---|---|
+| 0 | Entorno, GPU y arquitectura de modelos | Completada |
+| 1 | Ingesta documental | Completada |
+| 2 | Procesamiento y chunking | Completada |
+| 3 | Embeddings e indexación (Qdrant) | Pendiente |
+| 4 | Recuperación y fusión (BM25 + RRF) | Pendiente |
+| 5 | Generación y gestión del contexto | Pendiente |
+| 6 | Evaluación | Pendiente |
+| 7 | API backend (FastAPI) | Pendiente |
+| 8 | Interfaz web (React + Vite) | Pendiente |
+
+El detalle de cada fase se mantiene en `PLAN_IMPLEMENTACION.md`.
