@@ -5,14 +5,14 @@
 Orden de desarrollo del proyecto Local LLM & RAG. Cada fase indica el
 módulo responsable, su ubicación y las tecnologías previstas.
 
-## Fase 0. Preparación del entorno(Completada)
+## Fase 0. Preparación del entorno (Completada)
 
 * **Objetivo:** preparar un entorno reproducible, comprobar que el hardware puede ejecutar operaciones de inferencia mediante GPU y definir la arquitectura de modelos viable para el sistema.
 * **Ubicación:** raíz del proyecto.
 * **Archivos principales:** `pyproject.toml`, `uv.lock`, `.python-version` y `.gitignore`. El entorno virtual se mantiene en `.venv/` y no se versiona.
 * **Sistema operativo:** Windows 11.
 * **Gestión del entorno:** uv.
-* **Tecnologías:** Python, PyTorch, CUDA, NumPy, Hugging Face Transformers, Accelerate y bitsandbytes.
+* **Tecnologías:** Python 3.11, PyTorch, CUDA, NumPy, Hugging Face Transformers, Accelerate y bitsandbytes.
 * **Hardware objetivo:** NVIDIA GeForce RTX 3050 Laptop GPU, 4 GB de VRAM, Compute Capability 8.6.
 
 ### Estado
@@ -29,11 +29,10 @@ Comprobaciones completadas:
 * Capa lineal NF4 ejecutada correctamente en CUDA.
 * Transformers y Accelerate instalados.
 * Sentence Transformers 6.2.0 instalado.
-* Carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` validadas correctamente en la RTX 3050 Laptop mediante cuantización NF4 de 4 bits y cálculo FP16, sin CPU offloading.
+* Carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` validadas correctamente en la RTX 3050 Laptop mediante cuantización NF4 de 4 bits (con `BitsAndBytesConfig`) y cálculo FP16, sin CPU offloading.
 * Generación de código comprobada mediante una prueba de inferencia. Pico de memoria asignada por PyTorch: aproximadamente 1,15 GB (1,13 GB en la prueba aislada).
 * Carga e inferencia individuales de `Qwen/Qwen3-Embedding-0.6B` validadas experimentalmente mediante Sentence Transformers, con FP16 y CUDA. Dimensión de salida: 1.024. Pico de memoria asignada por PyTorch: aproximadamente 1,12 GB.
 * Carga e inferencia individuales de `Qwen/Qwen3-Reranker-0.6B` validadas experimentalmente mediante Sentence Transformers (CrossEncoder), con FP16 y CUDA. Longitud máxima: 1.024 tokens y batch size 1. Pico de memoria asignada por PyTorch: aproximadamente 1,12 GB.
-* Carga e inferencia de `Qwen/Qwen2.5-Coder-1.5B-Instruct` validadas correctamente en la RTX 3050 Laptop mediante cuantización NF4 de 4 bits (con `BitsAndBytesConfig`) y cálculo FP16, sin CPU offloading.
 * **Prueba de límites de contexto y generación completada con éxito (Fase 0 finalizada):**
   - Consumo inicial tras carga: ~1,13 GB de VRAM asignada / 1,18 GB reservada.
   - Contexto de entrada hasta ~22.828 tokens ejecutado dentro de la VRAM física de la GPU (3,58 GB reservados).
@@ -87,8 +86,7 @@ Decisión de arquitectura definitiva:
 * **Nota de Adaptación Tecnológica:** Se ha sustituido *Docling* por adaptadores especializados ligeros (`pymupdf`, `python-docx` y `python-pptx`) para garantizar una compatibilidad estricta con Python 3.11, el ecosistema CUDA y los límites de hardware locales sin conflictos de dependencias.
 
 * **Resultado:** Colección de objetos `ExtractedDocument` unificados con metadatos de procedencia, listos para la fase de chunking.
-* **Estado de la fase:** FINAL
-
+* **Estado de la fase:** FINALIZADA.
 
 ## Fase 2. Procesamiento y chunking (Completada)
 * **Objetivo:** Normalizar los documentos y generar chunks coherentes con su estructura y tipo de contenido, preservando la trazabilidad de líneas, secciones y metadatos de procedencia.
@@ -175,7 +173,6 @@ Decisión de arquitectura definitiva:
 * Exclusión del reranking en la implementación inicial.
 * Mantenimiento íntegro del enfoque de recuperación híbrida (Qdrant + BM25 + RRF + LangChain).
 
-**3. Tareas que continúan pendientes:**
+**3. Tareas que continúan pendientes (la Fase 0 está cerrada: los límites de contexto y generación ya se evaluaron):**
 
-* Evaluar los límites prácticos de contexto y generación del modelo generador en el hardware disponible (Fase 0).
 * Validar la calidad de recuperación y representación de `intfloat/multilingual-e5-small` en código y documentos técnicos (Fase 3 y Fase 6).
