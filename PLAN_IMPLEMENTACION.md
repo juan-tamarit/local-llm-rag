@@ -90,12 +90,17 @@ Decisión de arquitectura definitiva:
 * **Estado de la fase:** FINAL
 
 
-## Fase 2. Procesamiento y chunking
-
-* **Objetivo:** normalizar los documentos y generar chunks coherentes con su estructura y tipo de contenido.
-* **Ubicación:** `src/processing/`.
-* **Tecnologías:** Python y Tree-sitter para el análisis sintáctico del código; estrategia de Recursive Text Splitting adaptada a la estructura documental.
-* **Resultado:** representación común de chunks con contenido y metadatos de procedencia y contexto.
+## Fase 2. Procesamiento y chunking (Completada)
+* **Objetivo:** Normalizar los documentos y generar chunks coherentes con su estructura y tipo de contenido, preservando la trazabilidad de líneas, secciones y metadatos de procedencia.
+* **Ubicación:** `src/processing/`
+* **Tecnologías:** 
+  - **Recursive Text Splitting:** Estrategia recursiva basada en jerarquía de encabezados y delimitadores para prosa y documentación (configurada con tamaño objetivo, límite máximo y solapamiento / *overlap*).
+  - **Tree-sitter (`tree-sitter-python`):** Análisis de Árboles de Sintaxis Abstracta (AST) para fragmentar código fuente respetando los límites lógicos de funciones, métodos y clases.
+* **Estructura de archivos implementada:**
+  - `src/processing/base.py`: Modelo de datos estandarizado (`Chunk`, `ChunkMetadata`) y contrato abstracto (`BaseChunker`).
+  - `src/processing/text_splitter.py`: Chunker recursivo para documentación y texto plano con extracción contextual de encabezados.
+  - `src/processing/code_splitter.py`: Chunker basado en AST para código fuente en Python.
+* **Resultado:** Generación de fragmentos estandarizados y trazables equipados con metadatos de contexto (líneas de inicio/fin, nombres de sección, elementos contenedores y lenguaje), validados mediante la suite de pruebas unitarias (`tests/test_processing.py`).
 
 ## Fase 3. Embeddings e indexación
 
