@@ -55,10 +55,15 @@ Estas especificaciones constituyen el entorno de referencia para seleccionar y v
 | bitsandbytes | 0.50.2 |
 | Operación FP16 en GPU | Validada |
 | Capa lineal NF4 en GPU | Validada |
+| Sentence Transformers | 6.2.0 |
+| qdrant-client | 1.20.0 (modo local, `query_points`) |
+| urllib3 | 2.8.0 |
 
 La capacidad CUDA de la GPU se ha comprobado como `(8, 6)`. Se han validado operaciones PyTorch FP16, una capa NF4 y la carga e inferencia del modelo generativo seleccionado en la GPU.
 
 Entorno Python: 3.11. Sentence Transformers 6.2.0 está instalado y validado. `transformers` y `accelerate` están instalados, pero su versión exacta todavía no se ha registrado aquí (consultar `uv.lock`).
+
+El índice de PyTorch (`cu130`) se declara con `explicit = true` en `pyproject.toml` y solo se usa para `torch`; el resto de paquetes se resuelven desde PyPI. Sin esa opción, uv solo consideraba la copia antigua de `urllib3` alojada en el índice de PyTorch (1.26.13), incompatible con las versiones modernas de `qdrant-client`.
 
 ### 2.3. Modelo generativo
 
@@ -190,9 +195,11 @@ El contexto adicional se conservará preferentemente mediante metadatos. Cuando 
 
 Los metadatos permitirán localizar el contenido original, reconstruir su contexto y aplicar filtros durante la recuperación.
 
+En el índice, el payload de cada punto de Qdrant contiene estos campos con el nombre `content` para el texto, y añade `format` y `extra_info` procedentes de `ChunkMetadata`.
+
 #### Consideraciones generales
 
-- El tamaño de los chunks deberá ser compatible con el límite de entrada del modelo de embeddings.
+- El tamaño de los chunks deberá ser compatible con el límite de entrada del modelo de embeddings. `multilingual-e5-small` admite 512 tokens, inferior al tamaño máximo de 800 de la documentación: los chunks que lo superen se truncan al generar el embedding (el `Embedder` lo registra en el log). Número de chunks del corpus real afectados: por registrar.
 - Se evitará duplicar contenido innecesariamente.
 - La fragmentación deberá preservar la coherencia semántica y estructural.
 
@@ -210,9 +217,12 @@ Configuración inicial:
 - **Precisión:** FP32 inicialmente, salvo que las pruebas justifiquen otra configuración.
 - **Dispositivo:** CPU.
 - **Dimensiones de salida:** 384.
+- **Longitud máxima de entrada:** 512 tokens (`max_seq_length`), con aviso en el log cuando un fragmento la supera.
+- **Normalización:** vectores normalizados (norma L2 = 1).
+- **Implementación:** `src/embeddings/embedder.py` (`Embedder`).
 - **Modelo:** `intfloat/multilingual-e5-small`.
 
-La elección de este modelo y su ejecución en CPU constituye la configuración inicial propuesta para el sistema. Todavía no se ha validado su calidad de recuperación con el conjunto de evaluación del proyecto ni se ha medido su rendimiento en el hardware objetivo.
+La elección de este modelo y su ejecución en CPU constituye la configuración inicial del sistema. El `Embedder` está implementado y validado técnicamente con 8 pruebas (dimensión, normalización, prefijos, inserción, búsqueda, filtros y persistencia). Los resultados de la validación de calidad de recuperación con código y documentación del proyecto y el tiempo de generación de embeddings en CPU están por registrar. Su comparación formal con BM25 y la búsqueda híbrida con el conjunto de evaluación se realizará en la Fase 6.
 
 El modelo anterior, `Qwen/Qwen3-Embedding-0.6B`, sí se ha probado técnicamente en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM mediante Sentence Transformers, FP16 y CUDA. La prueba generó embeddings de dimensión 1.024 para dos entradas (texto en español y código Python), con un pico de memoria asignada por PyTorch de aproximadamente 1,12 GB. Esta prueba confirma su funcionamiento, pero no justifica mantenerlo en la configuración inicial: la prueba conjunta mostró que los tres modelos neuronales ocupaban prácticamente toda la VRAM disponible.
 
@@ -235,6 +245,13 @@ Responsabilidades:
 - Persistencia local de los índices.
 
 Qdrant podrá ejecutarse localmente sin necesidad de utilizar servicios externos.
+
+> **Estado:** implementado en la Fase 3 (`src/embeddings/vector_store.py`, clase `VectorStore`) con `qdrant-client` 1.20.0 en modo local persistente (`QdrantClient(path=...)`, índice en `data/indexes/qdrant_db/`).
+>
+> - Distancia coseno y dimensión 384; se comprueba que la dimensión de una colección existente coincida con la del modelo.
+> - Cada punto usa un UUID determinista (`uuid5`) derivado de `chunk_id`, por lo que el `upsert` es idempotente. Se rechaza un chunk sin `chunk_id`.
+> - Operaciones disponibles: `add_chunks` (por lotes), `delete_by_document`, `search` (con filtros por metadatos, mediante `query_points`), `scroll_all` (para construir BM25), `count` y `close`.
+> - El modo local bloquea la carpeta del índice y admite un único proceso a la vez; en Windows es necesario llamar a `close()`. Habrá que tenerlo en cuenta en la Fase 7 (API), donde podría valorarse ejecutar Qdrant como servidor local.
 
 ## 6. Sistema de recuperación (Retrieval)
 
@@ -590,7 +607,7 @@ El flujo principal del sistema será:
 | Modelo de embeddings | `intfloat/multilingual-e5-small` |
 | Biblioteca de embeddings | Sentence Transformers 6.2.0 |
 | Ejecución de embeddings | PyTorch en CPU (configuración inicial) |
-| Base de datos vectorial | Qdrant |
+| Base de datos vectorial | Qdrant (modo local persistente, `qdrant-client` 1.20.0) |
 | Búsqueda léxica | rank-bm25 |
 | Fusión de resultados | Reciprocal Rank Fusion (RRF) |
 | Reranking | No incluido inicialmente; etapa opcional futura |
@@ -755,10 +772,13 @@ Las siguientes cuestiones deberán resolverse mediante pruebas y evaluación:
 - Preparar el conjunto inicial de evaluación con consultas representativas de código y documentación.
 - Validar la calidad de recuperación de `intfloat/multilingual-e5-small` frente a BM25 y frente a la búsqueda híbrida.
 - Medir el tiempo de generación de embeddings en CPU y su impacto en la ingesta.
+- Registrar los resultados de la validación de calidad de `intfloat/multilingual-e5-small` realizada al cerrar la Fase 3 (consultas, aciertos en el top 5, casos fallidos) y cuántos chunks del corpus superan los 512 tokens.
 - Ajustar los parámetros de chunking y recuperación a partir de las métricas obtenidas.
 - Evaluar si la búsqueda híbrida necesita una etapa de reranking. No se seleccionará un modelo de reranking hasta que exista evidencia de que aporta una mejora suficiente.
 
 Resuelto: los límites prácticos de contexto y generación del modelo generativo se evaluaron en la Fase 0 (ver sección 2.3). Queda pendiente únicamente contrastarlos con consultas RAG representativas durante la evaluación.
+
+Resuelto en la Fase 3: la integración de Qdrant en modo local (que requirió `qdrant-client` 1.20.0 y declarar el índice de PyTorch como `explicit`), el formato del payload basado en el `Chunk` real y la política de reindexación (UUID determinista y borrado por documento).
 
 Las pruebas técnicas de carga e inferencia de los modelos anteriores se conservan como evidencia experimental, pero no implican que esos modelos formen parte de la configuración inicial seleccionada.
 
@@ -769,7 +789,7 @@ Las pruebas técnicas de carga e inferencia de los modelos anteriores se conserv
 | 0 | Entorno, GPU y arquitectura de modelos | Completada |
 | 1 | Ingesta documental | Completada |
 | 2 | Procesamiento y chunking | Completada |
-| 3 | Embeddings e indexación (Qdrant) | Pendiente |
+| 3 | Embeddings e indexación (Qdrant) | Completada |
 | 4 | Recuperación y fusión (BM25 + RRF) | Pendiente |
 | 5 | Generación y gestión del contexto | Pendiente |
 | 6 | Evaluación | Pendiente |

@@ -31,16 +31,19 @@ local-llm-rag/
 │   │   ├── base.py              # Chunk, ChunkMetadata, BaseChunker
 │   │   ├── text_splitter.py     # Chunker recursivo para documentación y texto
 │   │   └── code_splitter.py     # Chunker basado en AST (Python)
-│   ├── embeddings/              # Generación de embeddings (pendiente)
+│   ├── embeddings/              # Embeddings e indexación vectorial (implementado)
+│   │   ├── embedder.py          # Embedder: multilingual-e5-small (CPU), prefijos query/passage
+│   │   └── vector_store.py      # VectorStore (Qdrant local) y chunk_to_payload
 │   ├── retrieval/               # Búsqueda híbrida (semántica + BM25 + RRF) (pendiente)
 │   ├── generation/              # Prompt, contexto e inferencia del LLM (pendiente)
 │   ├── api/                     # API FastAPI (pendiente)
 │   └── evaluation/              # Evaluación del pipeline RAG (pendiente)
 ├── data/
 │   ├── documents/               # Documentos fuente
-│   └── indexes/                 # Índices y datos persistentes
+│   └── indexes/                 # Índices y datos persistentes (qdrant_db/, no versionar)
 └── tests/
-    └── test_processing.py       # Pruebas del módulo de procesamiento
+    ├── test_processing.py       # Pruebas del módulo de procesamiento
+    └── test_embeddings.py       # Pruebas de embeddings y almacén vectorial (Qdrant)
 ```
 
 Los módulos marcados como pendientes se incorporarán progresivamente al implementar cada fase (ver `PLAN_IMPLEMENTACION.md`). El reranking no forma parte de la versión inicial; si se incorpora, será una etapa desacoplada dentro de `src/retrieval/`.
@@ -51,7 +54,8 @@ Los módulos marcados como pendientes se incorporarán progresivamente al implem
 - `uv.lock` registra las versiones resueltas para reproducir el entorno.
 - `.python-version` fija la versión de Python utilizada por `uv`.
 - `.venv/` contiene el entorno virtual local y debe permanecer fuera del control de versiones.
-- `.gitignore` excluye, como mínimo, `.venv/`, cachés, secretos y artefactos locales que no deban versionarse.
+- `.gitignore` excluye, como mínimo, `.venv/`, `data/indexes/qdrant_db/`, cachés, secretos y artefactos locales que no deban versionarse.
+- El índice de PyTorch (`cu130`) se declara con `explicit = true` y solo se usa para `torch`; los demás paquetes proceden de PyPI. Así se evita que la copia antigua de `urllib3` del índice de PyTorch bloquee la resolución de `qdrant-client`.
 
 Comandos habituales:
 
@@ -85,4 +89,7 @@ Archivo  ->  [ingestion]  ->  ExtractedDocument  ->  [processing]  ->  Chunk  ->
 - `ExtractedDocument` y `DocumentMetadata` (`src/ingestion/base.py`): contenido extraído y metadatos de procedencia. Todo lector hereda de `BaseReader`, y `IngestionPipeline` elige el lector según la extensión.
 - `Chunk` y `ChunkMetadata` (`src/processing/base.py`): fragmento con metadatos de contexto (líneas de inicio y fin, sección, elemento contenedor y lenguaje). Todo chunker hereda de `BaseChunker`.
 
-Los módulos posteriores (embeddings, indexación, recuperación) consumen únicamente `Chunk`, sin conocer el formato de origen.
+- `Embedder` (`src/embeddings/embedder.py`): recibe textos y devuelve vectores normalizados de 384 dimensiones; aplica los prefijos `passage:` (chunks) y `query:` (consultas).
+- `VectorStore` (`src/embeddings/vector_store.py`): recibe `Chunk` y sus vectores. `chunk_to_payload` convierte el `Chunk` en el payload de Qdrant (`content`, `chunk_id`, `document_id`, `source`, `content_type`, `language`, `start_line`, `end_line`, `section`, `parent`, `format` y `extra_info`). Devuelve resultados como diccionarios con `id`, `score` y `payload`, que consumirá la capa de recuperación.
+
+Los módulos posteriores (recuperación, generación) consumen únicamente `Chunk` o los payloads derivados de él, sin conocer el formato de origen.

@@ -100,23 +100,36 @@ Decisión de arquitectura definitiva:
   - `src/processing/code_splitter.py`: Chunker basado en AST para código fuente en Python.
 * **Resultado:** Generación de fragmentos estandarizados y trazables equipados con metadatos de contexto (líneas de inicio/fin, nombres de sección, elementos contenedores y lenguaje), validados mediante la suite de pruebas unitarias (`tests/test_processing.py`).
 
-## Fase 3. Embeddings e indexación
+## Fase 3. Embeddings e indexación (Completada)
 
-* **Objetivo:** generar embeddings de los chunks y almacenarlos junto con sus metadatos.
+* **Objetivo:** generar embeddings de los chunks y almacenarlos junto con sus metadatos en un índice vectorial local y persistente.
 * **Ubicación:** `src/embeddings/` y `data/indexes/`.
-* **Tecnologías:** `intfloat/multilingual-e5-small` (ejecutado inicialmente en CPU), Sentence Transformers, PyTorch y Qdrant.
-* **Datos:** documentos originales en `data/documents/`.
-* **Estado:**
-* Pendiente: validar la calidad de los embeddings de `intfloat/multilingual-e5-small` y su comportamiento en la recuperación de documentación técnica y código fuente.
-
-
+* **Tecnologías:** `intfloat/multilingual-e5-small` (CPU, FP32), Sentence Transformers 6.2.0, PyTorch y Qdrant en modo local persistente (`qdrant-client` 1.20.0, `urllib3` 2.8.0).
+* **Datos:** documentos originales en `data/documents/`; índice persistente en `data/indexes/qdrant_db/` (no se versiona).
+* **Estructura de archivos implementada:**
+  - `src/embeddings/embedder.py`: `Embedder`. Carga el modelo en CPU, aplica los prefijos `passage:` y `query:`, normaliza los vectores (384 dimensiones), fija `max_seq_length` en 512 tokens, avisa en el log de los fragmentos que se truncarían y expone `count_tokens()`.
+  - `src/embeddings/vector_store.py`: `VectorStore` y `chunk_to_payload`. Qdrant local con distancia coseno, `add_chunks` (`upsert` por lotes), `delete_by_document`, `search` (con filtros por metadatos, mediante `query_points`), `scroll_all` (recorrido de la colección para construir BM25 en la Fase 4), `count` y `close`.
+  - `tests/test_embeddings.py`: 8 pruebas unitarias, todas superadas.
+* **Decisiones de implementación:**
+  - Los puntos usan un UUID determinista (`uuid5`) derivado de `chunk_id`, de modo que reindexar el mismo chunk no duplica puntos.
+  - Un chunk sin `chunk_id` se rechaza con un error.
+  - El payload se construye a partir del `Chunk` real de `src/processing/base.py`: usa `content` (no `text`), conserva los campos del contrato y añade `format` y `extra_info`.
+  - Al abrir una colección existente se comprueba que su dimensión coincida con la del modelo.
+  - `close()` libera el bloqueo de la carpeta del índice, necesario en Windows.
+* **Pruebas realizadas:** dimensión y normalización de los vectores, efecto de los prefijos, inserción y búsqueda, idempotencia del `upsert`, borrado por documento, filtro por `source`, persistencia tras cerrar y reabrir, y rechazo de chunks sin `chunk_id`.
+* **Descartado / sustituido:**
+  - `qdrant-client` 1.0.1: era la única versión resoluble, porque no admite el modo local ni `query_points`.
+* **Nota de adaptación tecnológica:** el índice de PyTorch `cu130` alojaba una copia antigua de `urllib3` (1.26.13) y uv, por defecto, solo consulta el primer índice que contiene un paquete. Todas las versiones modernas de `qdrant-client` exigen `urllib3>=1.26.14`, por lo que no había solución y se resolvía la 1.0.1. Se ha declarado el índice con `explicit = true`, de modo que solo se usa para `torch`; el resto de paquetes proceden de PyPI. `torch` se mantiene en 2.14.1+cu130 con CUDA operativa.
+* **Pendiente de registrar:** resultados de la validación de calidad de recuperación de `intfloat/multilingual-e5-small` con código y documentación del proyecto, número de chunks del corpus que superan los 512 tokens del modelo y tiempo de generación de embeddings en CPU. La comparación formal con BM25 y la búsqueda híbrida se realizará en la Fase 6.
 * **Resultado:** índice vectorial local consultable y persistente.
+* **Estado de la fase:** FINALIZADA.
 
 ## Fase 4. Recuperación y fusión
 
 * **Objetivo:** recuperar candidatos mediante búsqueda semántica y léxica y combinar los resultados para construir el contexto de generación.
 * **Ubicación:** `src/retrieval/`.
 * **Tecnologías:** Qdrant, rank-bm25 y Reciprocal Rank Fusion (RRF).
+* **Entradas disponibles de la Fase 3:** `VectorStore.search(query_vector, limit, filters)` para la búsqueda semántica y `VectorStore.scroll_all()` para recorrer los chunks indexados y construir el índice BM25.
 * **Notas de arquitectura:** el componente de reranking se excluye de la versión inicial; solo se reconsiderará como posible mejora futura condicionada a los resultados obtenidos en la fase de evaluación.
 * **Resultado:** fragmentos recuperados y fusionados listos para construir el contexto de generación.
 
@@ -160,19 +173,16 @@ Decisión de arquitectura definitiva:
 
 **1. Cambios realizados:**
 
-* **Fase 0:** Se documentó formalmente la prueba conjunta de los tres modelos de la familia Qwen y el desglose de consumo de VRAM (~3,37 GB asignados, VRAM libre cercana a 0 GB). Se especificó la razón técnica de la desestimación de esta carga simultánea en la GPU de 4 GB.
-* **Fase 3:** Se actualizó el modelo de embeddings a `intfloat/multilingual-e5-small`, indicando su ejecución inicial en CPU.
-* **Fase 4:** Se renombró la fase a "Recuperación y fusión", eliminando `Qwen3-Reranker-0.6B` y `CrossEncoder` de las tecnologías activas y redefiniendo el objetivo en torno a la búsqueda semántica, léxica (BM25) y su fusión (RRF).
-* **Fase 5:** Se ratificó que `Qwen2.5-Coder-1.5B-Instruct` (NF4/FP16) es el único modelo neuronal residente en GPU.
-* **Fase 6:** Se adaptó la evaluación para contemplar la comparación de recuperación semántica, léxica e híbrida, así como la eventual prueba del reranking en el futuro.
+* **Fase 3:** marcada como completada. Se documentan los archivos implementados (`embedder.py`, `vector_store.py`, `tests/test_embeddings.py`), las decisiones de implementación, las versiones (`qdrant-client` 1.20.0, `urllib3` 2.8.0) y las pruebas superadas.
+* **Fase 4:** se indican las entradas que aporta la Fase 3 (`search` con filtros y `scroll_all`).
 
 **2. Decisiones reflejadas:**
 
-* La convivencia de los tres modelos en GPU es viable para pruebas aisladas, pero inviable para producción por falta de margen de memoria.
-* Selección de `intfloat/multilingual-e5-small` en CPU como primera opción de embeddings.
-* Exclusión del reranking en la implementación inicial.
-* Mantenimiento íntegro del enfoque de recuperación híbrida (Qdrant + BM25 + RRF + LangChain).
+* Qdrant en modo local persistente, con UUID determinista por `chunk_id` y payload basado en el `Chunk` real.
+* Índice de PyTorch declarado como `explicit` para resolver el conflicto de `urllib3` con `qdrant-client`.
+* Mantenimiento del enfoque de recuperación híbrida (Qdrant + BM25 + RRF + LangChain) y exclusión del reranking en la versión inicial.
 
-**3. Tareas que continúan pendientes (la Fase 0 está cerrada: los límites de contexto y generación ya se evaluaron):**
+**3. Tareas que continúan pendientes:**
 
-* Validar la calidad de recuperación y representación de `intfloat/multilingual-e5-small` en código y documentos técnicos (Fase 3 y Fase 6).
+* Registrar los resultados de la validación de calidad de `intfloat/multilingual-e5-small` con código y documentación, el número de chunks que superan 512 tokens y el tiempo de embeddings en CPU.
+* Comparar formalmente la recuperación semántica, léxica e híbrida (Fase 6).
