@@ -5,7 +5,7 @@
 Orden de desarrollo del proyecto Local LLM & RAG. Cada fase indica el
 módulo responsable, su ubicación y las tecnologías previstas.
 
-## Fase 0. Preparación del entorno
+## Fase 0. Preparación del entorno(Completada)
 
 * **Objetivo:** preparar un entorno reproducible, comprobar que el hardware puede ejecutar operaciones de inferencia mediante GPU y definir la arquitectura de modelos viable para el sistema.
 * **Ubicación:** raíz del proyecto.
@@ -61,7 +61,7 @@ Decisión de arquitectura definitiva:
 
 * **Estado de la fase:** FINALIZADA. Todos los límites de VRAM, contexto y generación han sido evaluados y la arquitectura de modelos queda formalmente validada.
 
-## Fase 1. Ingesta documental
+## Fase 1. Ingesta documental(Completada)
 
 * **Objetivo:** leer los formatos admitidos y extraer su contenido y estructura.
 * **Ubicación:** `src/ingestion/`.
