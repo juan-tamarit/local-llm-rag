@@ -3,22 +3,19 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from src.processing.base import Chunk, ChunkMetadata
 from src.embeddings.embedder import Embedder
 from src.embeddings.vector_store import VectorStore
 
 
 def make_chunk(chunk_id, content, document_id, source, **extra):
-    """Chunk de prueba con metadatos anidados.
-    Sustituir por el Chunk real de src/processing/base.py cuando esté a mano."""
-    meta = SimpleNamespace(
+    return Chunk(
+        chunk_id=chunk_id, document_id=document_id, content=content,
         source=source, content_type=extra.get("content_type", "documentation"),
-        language=extra.get("language", "es"), start_line=1, end_line=5,
-        section=extra.get("section"), parent=None,
+        language=extra.get("language", "es"),
+        metadata=ChunkMetadata(format="md", start_line=1, end_line=5,
+                               section=extra.get("section")),
     )
-    return SimpleNamespace(
-        chunk_id=chunk_id, document_id=document_id, content=content, metadata=meta
-    )
-
 
 @pytest.fixture(scope="module")
 def embedder():
@@ -101,6 +98,6 @@ def test_persistence(embedder, tmp_path, chunks):
 
 
 def test_missing_chunk_id_raises(embedder, store):
-    bad = SimpleNamespace(chunk_id=None, document_id="d", content="x", metadata=None)
+    bad = make_chunk("", "x", "d", "s.md")
     with pytest.raises(ValueError):
         store.add_chunks([bad], embedder.embed_passages(["x"]))

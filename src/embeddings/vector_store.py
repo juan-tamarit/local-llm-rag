@@ -1,8 +1,8 @@
-import dataclasses
 import logging
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
+from src.processing.base import Chunk
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -15,47 +15,24 @@ PAYLOAD_FIELDS = [
     "language", "start_line", "end_line", "section", "parent",
 ]
 
-
-def _get(obj: Any, name: str, default: Any = None) -> Any:
-    if obj is None:
-        return default
-    if isinstance(obj, dict):
-        return obj.get(name, default)
-    return getattr(obj, name, default)
-
-
-def _meta_to_dict(meta: Any) -> Dict[str, Any]:
-    if meta is None:
-        return {}
-    if isinstance(meta, dict):
-        return dict(meta)
-    if hasattr(meta, "model_dump"):          # Pydantic v2
-        return meta.model_dump()
-    if dataclasses.is_dataclass(meta):
-        return dataclasses.asdict(meta)
-    return dict(vars(meta))
-
-
-def chunk_to_payload(chunk: Any) -> Dict[str, Any]:
-    """Convierte un Chunk en payload. Busca cada campo en el chunk y, si no está, en chunk.metadata."""
-    meta = getattr(chunk, "metadata", None)
-    payload: Dict[str, Any] = {"content": _get(chunk, "content", "")}
-
-    for field in PAYLOAD_FIELDS:
-        value = _get(chunk, field)
-        if value is None:
-            value = _get(meta, field)
-        payload[field] = value
-
-    # Metadatos adicionales que no estén en el contrato
-    for key, value in _meta_to_dict(meta).items():
-        payload.setdefault(key, value)
-
-    if not payload.get("chunk_id"):
+def chunk_to_payload(chunk: Chunk) -> Dict[str, Any]:
+    if not chunk.chunk_id:
         raise ValueError("El chunk no tiene chunk_id.")
-    payload["chunk_id"] = str(payload["chunk_id"])
-    return payload
-
+    meta = chunk.metadata
+    return {
+        "chunk_id": str(chunk.chunk_id),
+        "document_id": chunk.document_id,
+        "content": chunk.content,
+        "source": chunk.source,
+        "content_type": chunk.content_type,
+        "language": chunk.language,
+        "format": meta.format,
+        "start_line": meta.start_line,
+        "end_line": meta.end_line,
+        "section": meta.section,
+        "parent": meta.parent,
+        "extra_info": dict(meta.extra_info),
+    }
 
 def _point_id(chunk_id: str) -> str:
     """UUID determinista: el mismo chunk_id siempre produce el mismo punto (upsert idempotente)."""
