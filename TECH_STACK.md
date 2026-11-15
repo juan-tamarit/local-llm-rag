@@ -102,6 +102,8 @@ Se utilizará para integrar los distintos procesos de ingesta, recuperación y g
 
 La lógica específica del proyecto deberá mantenerse desacoplada de LangChain siempre que sea razonable.
 
+> **Estado:** la capa de recuperación (Fase 4, `src/retrieval/`) se ha implementado en Python puro, sin LangChain, para mantener el control sobre el funcionamiento interno del RAG. LangChain queda previsto, si se usa, para la Fase 5.
+
 ## 3. Ingesta y procesamiento documental
 
 El sistema admitirá distintos formatos de entrada. Se utilizarán herramientas especializadas según el tipo de documento.
@@ -269,6 +271,13 @@ Se utilizará para recuperar documentos mediante coincidencias léxicas.
 
 Resulta especialmente útil para búsquedas de identificadores, nombres de clases, métodos, variables y términos técnicos concretos.
 
+> **Estado:** implementado en la Fase 4 (`src/retrieval/bm25_index.py`, clase `BM25Index`) con `BM25Okapi` de `rank-bm25` (versión por registrar, ver `uv.lock`).
+>
+> - Tokenizador propio (`src/retrieval/tokenizer.py`): minúsculas, sin acentos, identificador completo más sus partes (`snake_case`, `camelCase`), de modo que `DatabaseManager` coincide con "database manager" y con la cadena exacta.
+> - Texto indexado: `content` junto con `parent`, `section` y el nombre del archivo.
+> - El índice vive en memoria y se construye con `VectorStore.scroll_all()`. Se reconstruye con `refresh()` o, de forma perezosa, cuando `count()` difiere del tamaño del corpus. Esta comprobación no detecta cambios que mantengan el número de chunks; tras reindexar hay que llamar a `refresh()`.
+> - Los filtros por metadatos (igualdad por campo del payload) se aplican tras puntuar todo el corpus, igual que en Qdrant, y se descartan los resultados con puntuación 0, por lo que el ranking léxico puede tener menos de 20 elementos.
+
 ### 6.3. Búsqueda híbrida y combinación de resultados
 
 Se utilizará **Reciprocal Rank Fusion (RRF)** para combinar los resultados de la búsqueda semántica y léxica.
@@ -295,6 +304,13 @@ Configuración inicial:
 Los fragmentos duplicados se identificarán mediante su `chunk_id` y se combinarán en una única entrada del ranking.
 
 El resultado de esta fase será un conjunto de hasta 20 candidatos ordenados por relevancia híbrida. En la configuración inicial, estos resultados se utilizarán directamente para construir el contexto RAG, sin una etapa neuronal de reranking.
+
+> **Estado:** implementado en la Fase 4 (`src/retrieval/fusion.py` y `src/retrieval/hybrid.py`) con los parámetros indicados (20 resultados por buscador, `k=60`, pesos iguales, 20 fusionados).
+>
+> - `reciprocal_rank_fusion` es una función pura. Un mismo `chunk_id` solo puntúa una vez por buscador y se combina en una única entrada.
+> - `HybridRetriever` expone `search_semantic`, `search_lexical` y `search_hybrid`; la consulta se vectoriza una sola vez y el mismo `filters` se aplica a ambos buscadores.
+> - Cada `RetrievalResult` conserva `semantic_rank`, `lexical_rank` y las puntuaciones de cada buscador para poder analizar la aportación de cada componente en la Fase 6.
+> - Pruebas: `tests/test_retrieval.py` (11 pruebas, todas superadas).
 
 
 ### 6.4. Reranking
@@ -608,7 +624,7 @@ El flujo principal del sistema será:
 | Biblioteca de embeddings | Sentence Transformers 6.2.0 |
 | Ejecución de embeddings | PyTorch en CPU (configuración inicial) |
 | Base de datos vectorial | Qdrant (modo local persistente, `qdrant-client` 1.20.0) |
-| Búsqueda léxica | rank-bm25 |
+| Búsqueda léxica | rank-bm25 (`BM25Okapi`; versión por registrar, ver `uv.lock`) |
 | Fusión de resultados | Reciprocal Rank Fusion (RRF) |
 | Reranking | No incluido inicialmente; etapa opcional futura |
 | Backend API | FastAPI |
@@ -770,7 +786,7 @@ La estrategia de evaluación permitirá validar progresivamente las decisiones a
 Las siguientes cuestiones deberán resolverse mediante pruebas y evaluación:
 
 - Preparar el conjunto inicial de evaluación con consultas representativas de código y documentación.
-- Validar la calidad de recuperación de `intfloat/multilingual-e5-small` frente a BM25 y frente a la búsqueda híbrida.
+- Validar la calidad de recuperación de `intfloat/multilingual-e5-small` frente a BM25 y frente a la búsqueda híbrida (los tres modos ya están implementados y se pueden invocar por separado; falta medirlos con el conjunto de evaluación).
 - Medir el tiempo de generación de embeddings en CPU y su impacto en la ingesta.
 - Registrar los resultados de la validación de calidad de `intfloat/multilingual-e5-small` realizada al cerrar la Fase 3 (consultas, aciertos en el top 5, casos fallidos) y cuántos chunks del corpus superan los 512 tokens.
 - Ajustar los parámetros de chunking y recuperación a partir de las métricas obtenidas.
@@ -779,6 +795,8 @@ Las siguientes cuestiones deberán resolverse mediante pruebas y evaluación:
 Resuelto: los límites prácticos de contexto y generación del modelo generativo se evaluaron en la Fase 0 (ver sección 2.3). Queda pendiente únicamente contrastarlos con consultas RAG representativas durante la evaluación.
 
 Resuelto en la Fase 3: la integración de Qdrant en modo local (que requirió `qdrant-client` 1.20.0 y declarar el índice de PyTorch como `explicit`), el formato del payload basado en el `Chunk` real y la política de reindexación (UUID determinista y borrado por documento).
+
+Resuelto en la Fase 4: tokenización de BM25 para código, consistencia de los filtros entre Qdrant y BM25, invalidación del índice léxico (`refresh()` y comprobación perezosa por `count()`) y deduplicación por `chunk_id`.
 
 Las pruebas técnicas de carga e inferencia de los modelos anteriores se conservan como evidencia experimental, pero no implican que esos modelos formen parte de la configuración inicial seleccionada.
 
@@ -790,7 +808,7 @@ Las pruebas técnicas de carga e inferencia de los modelos anteriores se conserv
 | 1 | Ingesta documental | Completada |
 | 2 | Procesamiento y chunking | Completada |
 | 3 | Embeddings e indexación (Qdrant) | Completada |
-| 4 | Recuperación y fusión (BM25 + RRF) | Pendiente |
+| 4 | Recuperación y fusión (BM25 + RRF) | Completada |
 | 5 | Generación y gestión del contexto | Pendiente |
 | 6 | Evaluación | Pendiente |
 | 7 | API backend (FastAPI) | Pendiente |

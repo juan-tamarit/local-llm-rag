@@ -124,19 +124,33 @@ Decisión de arquitectura definitiva:
 * **Resultado:** índice vectorial local consultable y persistente.
 * **Estado de la fase:** FINALIZADA.
 
-## Fase 4. Recuperación y fusión
+## Fase 4. Recuperación y fusión (Completada)
 
 * **Objetivo:** recuperar candidatos mediante búsqueda semántica y léxica y combinar los resultados para construir el contexto de generación.
 * **Ubicación:** `src/retrieval/`.
-* **Tecnologías:** Qdrant, rank-bm25 y Reciprocal Rank Fusion (RRF).
-* **Entradas disponibles de la Fase 3:** `VectorStore.search(query_vector, limit, filters)` para la búsqueda semántica y `VectorStore.scroll_all()` para recorrer los chunks indexados y construir el índice BM25.
+* **Tecnologías:** Qdrant (vía `VectorStore`), `rank-bm25` (`BM25Okapi`; versión por registrar, ver `uv.lock`), Reciprocal Rank Fusion (RRF) y NumPy. La capa es Python puro, sin LangChain.
+* **Entradas de la Fase 3:** `VectorStore.search(query_vector, limit, filters)` para la búsqueda semántica y `VectorStore.scroll_all()` para construir el índice BM25. `Embedder.embed_queries` para vectorizar la consulta.
+* **Estructura de archivos y clases implementada:**
+  - `src/retrieval/base.py`: `RetrievalResult` (`chunk_id`, `score`, `payload`, `semantic_rank`, `lexical_rank`, `semantic_score`, `lexical_score`). Los rankings empiezan en 1 y valen `None` si el buscador no devolvió el fragmento.
+  - `src/retrieval/tokenizer.py`: `tokenize()`, tokenizador de BM25 sensible a código. Pasa a minúsculas, elimina acentos y emite el identificador completo más sus partes (`DatabaseManager` -> `databasemanager`, `database`, `manager`; `get_user_id` -> `get_user_id`, `get`, `user`, `id`).
+  - `src/retrieval/bm25_index.py`: `BM25Index`. Se construye con `VectorStore.scroll_all()`, deduplica por `chunk_id` del payload e indexa `content` junto con `parent`, `section` y el nombre del archivo. `search(query, limit, filters)` devuelve `id`, `score` y `payload`, igual que `VectorStore.search`. Los filtros (igualdad por campo del payload) se aplican tras puntuar todo el corpus, y se descartan los resultados con puntuación 0. `refresh()` reconstruye el índice y `ensure_fresh()` lo reconstruye si `count()` difiere del tamaño del corpus en memoria.
+  - `src/retrieval/fusion.py`: `reciprocal_rank_fusion(rankings, k=60, weights=None, limit=20)`, función pura sin dependencias del resto del proyecto.
+  - `src/retrieval/hybrid.py`: `HybridRetriever`, con `search_semantic`, `search_lexical`, `search_hybrid` y `refresh()`. La consulta se vectoriza una sola vez y el mismo `filters` se aplica a ambos buscadores. Configuración por defecto: 20 resultados por buscador, `k=60`, pesos iguales y 20 resultados fusionados.
+  - `tests/test_retrieval.py`: 11 pruebas unitarias (tokenizador, RRF, `BM25Index` y `HybridRetriever` con un almacén y un embedder simulados), todas superadas.
+* **Decisiones de implementación:**
+  - Los tres modos se exponen por separado para que la Fase 6 pueda compararlos con el mismo código.
+  - La deduplicación se hace por `chunk_id` del payload, no por el UUID del punto de Qdrant.
+  - El reranking queda fuera: si se incorpora, será una etapa que se aplique sobre la salida de `search_hybrid`.
+* **Limitación conocida:** `ensure_fresh()` solo detecta cambios en el número de chunks. Si se borra un documento y se indexa otro con el mismo número de chunks, hay que llamar a `refresh()` de forma explícita tras reindexar.
 * **Notas de arquitectura:** el componente de reranking se excluye de la versión inicial; solo se reconsiderará como posible mejora futura condicionada a los resultados obtenidos en la fase de evaluación.
-* **Resultado:** fragmentos recuperados y fusionados listos para construir el contexto de generación.
+* **Resultado:** fragmentos recuperados y fusionados (`RetrievalResult`) listos para construir el contexto de generación.
+* **Estado de la fase:** FINALIZADA.
 
 ## Fase 5. Generación y gestión del contexto
 
 * **Objetivo:** construir el prompt, incorporar historial y contexto RAG, ejecutar el LLM residente en GPU y validar las referencias documentales.
 * **Ubicación:** `src/generation/`.
+* **Entrada disponible de la Fase 4:** `HybridRetriever.search_hybrid(query, limit, per_retriever, filters)` devuelve hasta 20 `RetrievalResult` ordenados por RRF; el contexto se construye a partir de su `payload`.
 * **Tecnologías:** Qwen2.5-Coder-1.5B-Instruct (único modelo neuronal en GPU, cuantización NF4 y FP16), Hugging Face Transformers, PyTorch, bitsandbytes, CUDA y LangChain.
 * **Resultado:** respuestas generadas con referencias a los fragmentos utilizados.
 
@@ -173,16 +187,18 @@ Decisión de arquitectura definitiva:
 
 **1. Cambios realizados:**
 
-* **Fase 3:** marcada como completada. Se documentan los archivos implementados (`embedder.py`, `vector_store.py`, `tests/test_embeddings.py`), las decisiones de implementación, las versiones (`qdrant-client` 1.20.0, `urllib3` 2.8.0) y las pruebas superadas.
-* **Fase 4:** se indican las entradas que aporta la Fase 3 (`search` con filtros y `scroll_all`).
+* **Fase 4:** marcada como completada. Se documentan los archivos implementados en `src/retrieval/` (`base.py`, `tokenizer.py`, `bm25_index.py`, `fusion.py`, `hybrid.py`), `tests/test_retrieval.py` (11 pruebas superadas), los parámetros por defecto y la limitación de `ensure_fresh()`.
 
 **2. Decisiones reflejadas:**
 
-* Qdrant en modo local persistente, con UUID determinista por `chunk_id` y payload basado en el `Chunk` real.
-* Índice de PyTorch declarado como `explicit` para resolver el conflicto de `urllib3` con `qdrant-client`.
-* Mantenimiento del enfoque de recuperación híbrida (Qdrant + BM25 + RRF + LangChain) y exclusión del reranking en la versión inicial.
+* Capa de recuperación en Python puro, sin LangChain.
+* Tokenizador de BM25 sensible a código: identificador completo más partes (`snake_case`, `camelCase`), sin acentos.
+* Filtros de metadatos consistentes entre Qdrant y BM25.
+* Deduplicación por `chunk_id` y exposición independiente de los modos semántico, léxico e híbrido para la Fase 6.
+* Mantenimiento de la exclusión del reranking en la versión inicial.
 
 **3. Tareas que continúan pendientes:**
 
 * Registrar los resultados de la validación de calidad de `intfloat/multilingual-e5-small` con código y documentación, el número de chunks que superan 512 tokens y el tiempo de embeddings en CPU.
+* Registrar la versión de `rank-bm25` (ver `uv.lock`).
 * Comparar formalmente la recuperación semántica, léxica e híbrida (Fase 6).

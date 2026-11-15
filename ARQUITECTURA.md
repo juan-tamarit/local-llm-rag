@@ -34,7 +34,12 @@ local-llm-rag/
 │   ├── embeddings/              # Embeddings e indexación vectorial (implementado)
 │   │   ├── embedder.py          # Embedder: multilingual-e5-small (CPU), prefijos query/passage
 │   │   └── vector_store.py      # VectorStore (Qdrant local) y chunk_to_payload
-│   ├── retrieval/               # Búsqueda híbrida (semántica + BM25 + RRF) (pendiente)
+│   ├── retrieval/               # Búsqueda híbrida (semántica + BM25 + RRF) (implementado)
+│   │   ├── base.py              # RetrievalResult
+│   │   ├── tokenizer.py         # Tokenizador de BM25 sensible a código (snake_case, camelCase)
+│   │   ├── bm25_index.py        # BM25Index (rank-bm25), construido con VectorStore.scroll_all()
+│   │   ├── fusion.py            # reciprocal_rank_fusion (función pura)
+│   │   └── hybrid.py            # HybridRetriever: search_semantic / search_lexical / search_hybrid
 │   ├── generation/              # Prompt, contexto e inferencia del LLM (pendiente)
 │   ├── api/                     # API FastAPI (pendiente)
 │   └── evaluation/              # Evaluación del pipeline RAG (pendiente)
@@ -43,7 +48,8 @@ local-llm-rag/
 │   └── indexes/                 # Índices y datos persistentes (qdrant_db/, no versionar)
 └── tests/
     ├── test_processing.py       # Pruebas del módulo de procesamiento
-    └── test_embeddings.py       # Pruebas de embeddings y almacén vectorial (Qdrant)
+    ├── test_embeddings.py       # Pruebas de embeddings y almacén vectorial (Qdrant)
+    └── test_retrieval.py        # Pruebas de recuperación: tokenizador, RRF, BM25 y búsqueda híbrida
 ```
 
 Los módulos marcados como pendientes se incorporarán progresivamente al implementar cada fase (ver `PLAN_IMPLEMENTACION.md`). El reranking no forma parte de la versión inicial; si se incorpora, será una etapa desacoplada dentro de `src/retrieval/`.
@@ -84,12 +90,14 @@ Cada etapa del pipeline produce una representación común, independiente del fo
 
 ```text
 Archivo  ->  [ingestion]  ->  ExtractedDocument  ->  [processing]  ->  Chunk  ->  [embeddings / indexación]
+Consulta ->  [retrieval]  ->  RetrievalResult (payload del Chunk)  ->  [generation]
 ```
 
 - `ExtractedDocument` y `DocumentMetadata` (`src/ingestion/base.py`): contenido extraído y metadatos de procedencia. Todo lector hereda de `BaseReader`, y `IngestionPipeline` elige el lector según la extensión.
 - `Chunk` y `ChunkMetadata` (`src/processing/base.py`): fragmento con metadatos de contexto (líneas de inicio y fin, sección, elemento contenedor y lenguaje). Todo chunker hereda de `BaseChunker`.
 
 - `Embedder` (`src/embeddings/embedder.py`): recibe textos y devuelve vectores normalizados de 384 dimensiones; aplica los prefijos `passage:` (chunks) y `query:` (consultas).
-- `VectorStore` (`src/embeddings/vector_store.py`): recibe `Chunk` y sus vectores. `chunk_to_payload` convierte el `Chunk` en el payload de Qdrant (`content`, `chunk_id`, `document_id`, `source`, `content_type`, `language`, `start_line`, `end_line`, `section`, `parent`, `format` y `extra_info`). Devuelve resultados como diccionarios con `id`, `score` y `payload`, que consumirá la capa de recuperación.
+- `VectorStore` (`src/embeddings/vector_store.py`): recibe `Chunk` y sus vectores. `chunk_to_payload` convierte el `Chunk` en el payload de Qdrant (`content`, `chunk_id`, `document_id`, `source`, `content_type`, `language`, `start_line`, `end_line`, `section`, `parent`, `format` y `extra_info`). Devuelve resultados como diccionarios con `id`, `score` y `payload`, que consume la capa de recuperación.
+- `RetrievalResult` (`src/retrieval/base.py`): resultado de la recuperación, con `chunk_id`, `score`, `payload` (el del `Chunk` indexado) y la trazabilidad por buscador (`semantic_rank`, `lexical_rank`, `semantic_score`, `lexical_score`). `BM25Index.search` devuelve diccionarios con el mismo formato que `VectorStore.search` (`id`, `score`, `payload`), y `HybridRetriever` ofrece `search_semantic`, `search_lexical` y `search_hybrid`, que devuelven `list[RetrievalResult]`. Un futuro reranker se aplicaría sobre la salida de `search_hybrid`.
 
-Los módulos posteriores (recuperación, generación) consumen únicamente `Chunk` o los payloads derivados de él, sin conocer el formato de origen.
+Los módulos posteriores (recuperación, generación) consumen únicamente `Chunk` o los payloads derivados de él, sin conocer el formato de origen. La generación recibirá los `RetrievalResult` y trabajará con su `payload`.
