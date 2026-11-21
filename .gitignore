@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 .venv/
-data/indexes/qdrant_db/
 src/model_paths.py
 models/
+# Corpus de usuario (no versionar)
+data/documents/*
+!data/documents/.gitkeep
+
+# Índices locales
+data/indexes/qdrant_db/
