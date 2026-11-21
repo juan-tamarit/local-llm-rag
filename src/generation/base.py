@@ -36,3 +36,17 @@ class GenerationResult:
     invalid_refs: list[str] = field(default_factory=list)
     sources: list[dict] = field(default_factory=list)
     context_chunks: list[ContextChunk] = field(default_factory=list)
+
+@dataclass(frozen=True)
+class Exchange:
+    user: str
+    assistant: str
+
+
+@dataclass
+class PromptParts:
+    messages: list[dict]                 # formato chat: system / user / assistant ...
+    context_chunks: list[ContextChunk]
+    history: list[Exchange]
+    prompt_tokens: int
+    max_new_tokens: int
