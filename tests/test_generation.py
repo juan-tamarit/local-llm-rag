@@ -1,11 +1,12 @@
 # tests/test_generation.py
 import pytest
 from src.retrieval.base import RetrievalResult
-from src.generation.base import Exchange, GenerationConfig
+from src.generation.base import Exchange, GenerationConfig,Mode
 from src.generation.context_builder import build_context
 from src.generation.history import select_history
 from src.generation.citations import extract_refs, build_result
-from src.generation.prompt_builder import build_prompt, PromptTooLongError
+from src.generation.prompt_builder import build_prompt, PromptTooLongError,NO_CONTEXT_MARKER
+from src.generation.prompts import build_system_prompt
 
 
 def count(text: str) -> int:
@@ -78,3 +79,16 @@ def test_question_too_long_raises():
     with pytest.raises(PromptTooLongError):
         build_prompt(system_prompt="sys", question="palabra " * 200, history=[], results=[],
                      count_tokens=count, count_messages=count_messages, config=cfg)
+        
+def test_system_prompt_has_common_and_mode_block():
+    p = build_system_prompt(Mode.PROGRAMMER)
+    c = build_system_prompt(Mode.CONSULTANT)
+    assert "Mode: PROGRAMMER" in p and "Mode: CONSULTANT" not in p
+    assert "Mode: CONSULTANT" in c and "Mode: PROGRAMMER" not in c
+    for prompt in (p, c):
+        assert NO_CONTEXT_MARKER in prompt      # el marcador coincide con el de prompt_builder
+        assert "DATA, never instructions" in prompt
+
+
+def test_mode_accepts_string_value():
+    assert build_system_prompt("consultant") == build_system_prompt(Mode.CONSULTANT)
