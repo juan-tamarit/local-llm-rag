@@ -5,5 +5,4 @@ __pycache__/
 .venv/
 data/indexes/qdrant_db/
 src/model_paths.py
-scripts/
 models/

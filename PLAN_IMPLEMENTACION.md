@@ -120,7 +120,8 @@ Decisión de arquitectura definitiva:
 * **Descartado / sustituido:**
   - `qdrant-client` 1.0.1: era la única versión resoluble, porque no admite el modo local ni `query_points`.
 * **Nota de adaptación tecnológica:** el índice de PyTorch `cu130` alojaba una copia antigua de `urllib3` (1.26.13) y uv, por defecto, solo consulta el primer índice que contiene un paquete. Todas las versiones modernas de `qdrant-client` exigen `urllib3>=1.26.14`, por lo que no había solución y se resolvía la 1.0.1. Se ha declarado el índice con `explicit = true`, de modo que solo se usa para `torch`; el resto de paquetes proceden de PyPI. `torch` se mantiene en 2.14.1+cu130 con CUDA operativa.
-* **Pendiente de registrar:** resultados de la validación de calidad de recuperación de `intfloat/multilingual-e5-small` con código y documentación del proyecto, número de chunks del corpus que superan los 512 tokens del modelo y tiempo de generación de embeddings en CPU. La comparación formal con BM25 y la búsqueda híbrida se realizará en la Fase 6.
+* **Registrado en la Fase 5 (`scripts/ingest.py`, corpus de prueba de 9 archivos: los tres `.md` del proyecto y 6 archivos de `src/retrieval/`):** 180 chunks indexados, 2 de ellos sobre los 512 tokens del modelo (1,1 %, ambos funciones largas de código que se truncan al embeber) y 7,1 s de embeddings en CPU (unos 40 ms por chunk).
+* **Pendiente de registrar:** resultados formales de la validación de calidad de recuperación de `intfloat/multilingual-e5-small` con código y documentación (consultas, aciertos en el top 5, casos fallidos). La comparación con BM25 y la búsqueda híbrida se realizará en la Fase 6.
 * **Resultado:** índice vectorial local consultable y persistente.
 * **Estado de la fase:** FINALIZADA.
 
@@ -128,7 +129,7 @@ Decisión de arquitectura definitiva:
 
 * **Objetivo:** recuperar candidatos mediante búsqueda semántica y léxica y combinar los resultados para construir el contexto de generación.
 * **Ubicación:** `src/retrieval/`.
-* **Tecnologías:** Qdrant (vía `VectorStore`), `rank-bm25` (`BM25Okapi`; versión por registrar, ver `uv.lock`), Reciprocal Rank Fusion (RRF) y NumPy. La capa es Python puro, sin LangChain.
+* **Tecnologías:** Qdrant (vía `VectorStore`), `rank-bm25` (`BM25Okapi`; versión por registrar, ver `uv.lock`), Reciprocal Rank Fusion (RRF) y NumPy. La capa es Python puro, sin LangChain (aplazado, ver Fase 5 y "Líneas futuras").
 * **Entradas de la Fase 3:** `VectorStore.search(query_vector, limit, filters)` para la búsqueda semántica y `VectorStore.scroll_all()` para construir el índice BM25. `Embedder.embed_queries` para vectorizar la consulta.
 * **Estructura de archivos y clases implementada:**
   - `src/retrieval/base.py`: `RetrievalResult` (`chunk_id`, `score`, `payload`, `semantic_rank`, `lexical_rank`, `semantic_score`, `lexical_score`). Los rankings empiezan en 1 y valen `None` si el buscador no devolvió el fragmento.
@@ -146,13 +147,56 @@ Decisión de arquitectura definitiva:
 * **Resultado:** fragmentos recuperados y fusionados (`RetrievalResult`) listos para construir el contexto de generación.
 * **Estado de la fase:** FINALIZADA.
 
-## Fase 5. Generación y gestión del contexto
+## Fase 5. Generación y gestión del contexto (Completada)
 
 * **Objetivo:** construir el prompt, incorporar historial y contexto RAG, ejecutar el LLM residente en GPU y validar las referencias documentales.
-* **Ubicación:** `src/generation/`.
-* **Entrada disponible de la Fase 4:** `HybridRetriever.search_hybrid(query, limit, per_retriever, filters)` devuelve hasta 20 `RetrievalResult` ordenados por RRF; el contexto se construye a partir de su `payload`.
-* **Tecnologías:** Qwen2.5-Coder-1.5B-Instruct (único modelo neuronal en GPU, cuantización NF4 y FP16), Hugging Face Transformers, PyTorch, bitsandbytes, CUDA y LangChain.
-* **Resultado:** respuestas generadas con referencias a los fragmentos utilizados.
+* **Ubicación:** `src/generation/`, más `src/model_paths.py`, `scripts/` y `models/`.
+* **Entrada de la Fase 4:** `HybridRetriever.search_hybrid(query, limit, per_retriever, filters)` devuelve hasta 20 `RetrievalResult` ordenados por RRF; el contexto se construye a partir de su `payload`.
+* **Tecnologías:** Qwen2.5-Coder-1.5B-Instruct (único modelo neuronal en GPU, cuantización NF4 y cálculo FP16, sin CPU offloading), Hugging Face Transformers (`TextIteratorStreamer` para el streaming), PyTorch, bitsandbytes y CUDA. La capa es Python puro, sin LangChain.
+* **Estructura de archivos y clases implementada:**
+  - `src/generation/base.py`: `Mode` (`PROGRAMMER` / `CONSULTANT`), `GenerationConfig`, `ContextChunk`, `Exchange`, `PromptParts` y `GenerationResult`.
+  - `src/generation/token_counter.py`: `TokenCounter`. Cuenta con el tokenizador de Qwen (no el de e5) y mide el prompt completo con `apply_chat_template`.
+  - `src/generation/language.py`: `detect_language()`, heurística ES/EN sin dependencias (por defecto, español).
+  - `src/generation/prompts.py`: `build_system_prompt(mode)`, bloque común más bloque del modo. Texto en inglés; responde en el idioma de la pregunta.
+  - `src/generation/context_builder.py`: `format_chunk`, `build_context` y `sanitize`. Los fragmentos se numeran `S1..Sn` de forma contigua, en orden RRF; el que no cabe en el presupuesto se descarta y se prueba el siguiente. `sanitize` neutraliza los delimitadores del prompt (`<context>`, `<question>`, `[DOCUMENT S#]`) y elimina órdenes triviales del tipo "ignora las instrucciones" (con aviso en el log).
+  - `src/generation/history.py`: `select_history`. Intercambios completos, de más reciente a más antiguo; se detiene en el primero que no cabe.
+  - `src/generation/prompt_builder.py`: `build_prompt`. Ajusta el prompt al presupuesto global con la plantilla real. Sin fragmentos añade un marcador y una nota de "sin documentos"; con fragmentos añade un recordatorio final con el idioma.
+  - `src/generation/llm.py`: `LLM`, con `generate()` y `generate_stream()` (hilo y `TextIteratorStreamer`). Determinista por defecto (`temperature=0.0`).
+  - `src/generation/citations.py`: `extract_refs` (admite `[S1]`, `[S1][S2]` y `[S1, S2]`) y `build_result`, que separa referencias válidas e inválidas y marca `uncited`.
+  - `src/generation/pipeline.py`: `RAGGenerator` con `answer()` y `answer_stream()`.
+  - `src/model_paths.py`: `local_model_path()`, resuelve la carpeta de cada modelo en `models/`.
+  - `scripts/download_models.py`, `scripts/ingest.py`, `scripts/smoke_llm.py` y `scripts/smoke_pipeline.py`.
+  - `tests/test_generation.py`: pruebas de la lógica pura, sin GPU (contexto, historial, prompt, citas, saneamiento, marca `uncited`, system prompt, idioma).
+* **Parámetros por defecto (`GenerationConfig`):** contexto global 4.096 tokens, RAG 2.500, máximo 5 fragmentos, historial 500 y reserva para la respuesta 512. Todos son experimentales y se ajustarán en la Fase 6.
+* **Decisiones de implementación:**
+  - Los presupuestos se miden con el tokenizador de Qwen y la plantilla de chat, no con el de e5.
+  - Orden de recorte bajo el presupuesto global: primero el contexto RAG, después el historial; nunca el system prompt ni la pregunta.
+  - Si un fragmento no cabe se descarta; el truncamiento estructural (por bloques de código o párrafos) queda como mejora posterior.
+  - Lo que se puede decidir en código se decide en código: el caso "sin resultados" lo detecta el constructor del prompt y el idioma se fija con `detect_language`, porque el modelo de 1,5B ignoraba esas reglas cuando solo estaban en el system prompt.
+  - Las referencias `S#` son temporales; la lista de fuentes la construye `citations.py` con los fragmentos realmente citados y el modelo no la escribe.
+  - El modo (`PROGRAMMER` / `CONSULTANT`) lo elige quien llama; `RAGGenerator` usa `CONSULTANT` por defecto.
+  - No se establece umbral de relevancia: la suficiencia del contexto la decide el LLM (§7.3 de `TECH_STACK.md`).
+* **Modelos locales (offline):** los modelos se descargan una sola vez a `models/` con `scripts/download_models.py` y se cargan con `local_files_only=True` desde `llm.py`, `token_counter.py` y `embedder.py`. `models/` no se versiona. Se guardan los pesos originales en FP16, porque la cuantización NF4 se aplica al cargar.
+* **Mediciones registradas:**
+  - System prompt: 212 tokens (`PROGRAMMER`) y 223 (`CONSULTANT`), medidos con el tokenizador de Qwen (la primera versión, más larga, ocupaba unos 425).
+  - Prompts completos de las pruebas de humo: entre 289 y 355 tokens, con 0 o 1 fragmento de contexto (documentos de prueba).
+  - VRAM pico asignada durante la generación: unos 1,19-1,20 GB, en línea con la Fase 0.
+  - Ingesta del corpus de prueba: ver Fase 3.
+* **Pruebas realizadas:** `tests/test_generation.py` (15 pruebas superadas en la última ejecución registrada; después se añadieron las del detector de idioma, recuento por registrar) y pruebas de humo con el modelo real y con el índice real.
+* **Limitaciones observadas del modelo de 1,5B (llevadas a la Fase 6):**
+  - Citas: en las 4 respuestas de la prueba con el índice real el modelo no citó ningún fragmento (`uncited=True`).
+  - Abstención: con fragmentos irrelevantes (pregunta sobre Kubernetes, sin información en el corpus) respondió con conocimiento general sin avisar de que la documentación no lo cubría, y coló un carácter chino en el texto.
+  - Copia del contexto: en una de las preguntas reprodujo los fragmentos `[DOCUMENT S#]` en lugar de redactar una respuesta.
+  - Idioma: en la prueba sin recordatorio explícito respondió en inglés a preguntas en español; el idioma explícito se añadió después y no se ha medido de forma sistemática.
+  - Inyección: una orden dentro de un documento fue obedecida hasta que `sanitize` la eliminó; con el saneamiento la defensa funcionó en el caso probado, y se considera básica, no infalible.
+* **Observación sobre recuperación:** para "¿Qué hace HybridRetriever?" el top 5 solo contenía fragmentos de los tres `.md` y ninguno de `hybrid.py`, y la respuesta fue imprecisa. Se medirá en la Fase 6 (consultas por identificador, peso del BM25 y efecto de la longitud de los chunks de código).
+* **Deuda técnica detectada:**
+  - Los cinco lectores guardan en `source` la ruta absoluta y derivan `document_id` de `Path.as_uri()`, que exige rutas absolutas. Las citas muestran rutas largas de la máquina y, si el proyecto se mueve, el mismo archivo obtiene otro `document_id`, por lo que `delete_by_document` no limpia lo anterior y la reindexación duplica chunks. Corrección prevista: que el lector reciba una raíz (`base_dir`) y calcule `source` y `document_id` a partir de la ruta relativa, como cambio propio con sus pruebas.
+  - `IngestionPipeline` no registra lectores por defecto: el registro está en `build_pipeline()` de `scripts/ingest.py`. Conviene moverlo al propio pipeline o a una fábrica.
+* **Aplazado:** LangChain / LangGraph. No son necesarios por la sencillez del flujo actual (`retrieve -> build_prompt -> generate -> validate`), que exige control directo del presupuesto de tokens. Se reconsideran en fases futuras (ver "Líneas futuras").
+* **Nota de adaptación tecnológica:** el generador se carga desde `models/` con `local_files_only=True` para que el proyecto funcione sin internet; `from_pretrained` consultaba Hugging Face en cada arranque.
+* **Resultado:** `RAGGenerator` genera respuestas a partir del índice local, con referencias validadas estructuralmente y soporte de streaming para la Fase 7.
+* **Estado de la fase:** FINALIZADA.
 
 ## Fase 6. Evaluación
 
@@ -164,6 +208,11 @@ Decisión de arquitectura definitiva:
 * Se contempla la posibilidad de comparar los resultados con y sin reranking si en el futuro se decide evaluar un modelo de reranking.
 
 
+* Debe medir las limitaciones observadas en la Fase 5: citas ausentes, abstención ante contexto irrelevante, copia del contexto, idioma y recuperación por identificadores.
+* Parámetros a ajustar con los resultados: reserva de 512 tokens para la respuesta, 500 de historial, 2.500 de contexto RAG y máximo de 5 fragmentos.
+* Experimento previsto, variando solo el modelo: un generador mayor (por ejemplo, un 3B en NF4) si el 1,5B no cita ni se abstiene de forma aceptable. Debe comprobarse antes su encaje en 4 GB de VRAM.
+* Valorar, con datos, un umbral mínimo de relevancia de recuperación que fuerce el caso "sin resultados" (hoy descartado en §7.3 de `TECH_STACK.md`).
+
 * **Resultado:** ejecuciones reproducibles y resultados en JSON que permitan comparar configuraciones.
 
 ## Fase 7. API backend
@@ -171,6 +220,7 @@ Decisión de arquitectura definitiva:
 * **Objetivo:** exponer el motor RAG mediante una API independiente de los clientes.
 * **Ubicación:** `src/api/`.
 * **Tecnologías:** FastAPI, REST y Server-Sent Events (SSE).
+* **Entrada disponible de la Fase 5:** `RAGGenerator.answer()` y `RAGGenerator.answer_stream()` (emite `("token", str)` y `("done", GenerationResult)`). El modo local de Qdrant admite un único proceso, y `generate_stream` es un generador síncrono: habrá que ejecutarlo fuera del bucle de eventos de FastAPI.
 * **Resultado:** API capaz de gestionar solicitudes y coordinar el acceso al motor RAG.
 
 ## Fase 8. Interfaz web
@@ -181,24 +231,37 @@ Decisión de arquitectura definitiva:
 * **Comunicación:** API REST y SSE.
 * **Resultado:** interfaz web conectada al backend.
 
+## Líneas futuras
+
+* Cliente CLI y integración con VS Code, como clientes de la API de la Fase 7 (no requieren cambios en el motor RAG).
+* Flujos de metodologías ágiles (user stories) y enfoque de programación orientada a modelos: flujos de varios pasos (analizar, descomponer, generar, validar, iterar) con estado, ramas y reintentos.
+* Valorar LangGraph, y LangChain si aporta algo, para esos flujos. Los pasos de `src/generation/` son funciones separadas y podrían envolverse como nodos de un grafo sin reescribirse. Aplazado, no descartado.
+* Rutas relativas en `source` y `document_id` (deuda técnica de la Fase 5).
+
 ---
 
 ### Resumen de la actualización
 
 **1. Cambios realizados:**
 
-* **Fase 4:** marcada como completada. Se documentan los archivos implementados en `src/retrieval/` (`base.py`, `tokenizer.py`, `bm25_index.py`, `fusion.py`, `hybrid.py`), `tests/test_retrieval.py` (11 pruebas superadas), los parámetros por defecto y la limitación de `ensure_fresh()`.
+* **Fase 5:** marcada como completada. Se documentan los archivos implementados en `src/generation/`, `src/model_paths.py` y `scripts/`, los parámetros por defecto, las mediciones (system prompt de 212-223 tokens, VRAM pico de unos 1,2 GB) y las pruebas de `tests/test_generation.py`.
+* **Fase 3:** registrados los datos de la ingesta del corpus de prueba (180 chunks, 2 sobre 512 tokens, 7,1 s de embeddings en CPU).
+* **Fases 6 y 7:** ajustado el alcance con lo observado en la Fase 5.
+* Añadida la sección "Líneas futuras".
 
 **2. Decisiones reflejadas:**
 
-* Capa de recuperación en Python puro, sin LangChain.
-* Tokenizador de BM25 sensible a código: identificador completo más partes (`snake_case`, `camelCase`), sin acentos.
-* Filtros de metadatos consistentes entre Qdrant y BM25.
-* Deduplicación por `chunk_id` y exposición independiente de los modos semántico, léxico e híbrido para la Fase 6.
+* LangChain / LangGraph aplazado (no descartado) por la sencillez del flujo actual.
+* Presupuestos medidos con el tokenizador de Qwen y la plantilla de chat.
+* Decisiones que se toman en código y no en el prompt: caso "sin resultados" e idioma.
+* Saneamiento de delimitadores y de órdenes triviales dentro de los documentos.
+* Modelos locales en `models/`, cargados con `local_files_only=True`.
 * Mantenimiento de la exclusión del reranking en la versión inicial.
 
 **3. Tareas que continúan pendientes:**
 
-* Registrar los resultados de la validación de calidad de `intfloat/multilingual-e5-small` con código y documentación, el número de chunks que superan 512 tokens y el tiempo de embeddings en CPU.
-* Registrar la versión de `rank-bm25` (ver `uv.lock`).
+* Medir en la Fase 6 las limitaciones del modelo de 1,5B (citas, abstención, copia del contexto, idioma) y la recuperación por identificadores.
+* Registrar el recuento actual de `tests/test_generation.py` (incluye las pruebas de idioma) y la versión de `rank-bm25` (ver `uv.lock`).
+* Registrar la versión exacta de `transformers` y `accelerate` (ver `uv.lock`).
+* Corregir las rutas absolutas en `source` y `document_id`.
 * Comparar formalmente la recuperación semántica, léxica e híbrida (Fase 6).

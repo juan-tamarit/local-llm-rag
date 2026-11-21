@@ -92,17 +92,29 @@ Las pruebas de límites prácticos (Fase 0) confirmaron una gran estabilidad de 
 
 Estos resultados validan holgadamente los presupuestos operativos del proyecto (2.500 tokens para contexto RAG y 4.096 tokens para el presupuesto global de contexto).
 
+> **Estado (Fase 5):** el generador está integrado en `src/generation/llm.py` (clase `LLM`, NF4 + FP16, todo en GPU, determinista por defecto con `temperature=0.0`) y se carga desde `models/`. El pico de VRAM asignada medido durante la generación con el pipeline completo es de unos 1,19-1,20 GB. Con un contexto global de 4.096 tokens y 512 reservados para la respuesta, quedan unos 3.600 tokens para system prompt, historial, contexto RAG y pregunta. El system prompt ocupa 212 tokens (`PROGRAMMER`) y 223 (`CONSULTANT`).
+>
+> Las pruebas con el índice real muestran limitaciones del modelo de 1,5B en el seguimiento de instrucciones (citas, abstención, copia del contexto; detalle en `PLAN_IMPLEMENTACION.md`, Fase 5). Se medirán en la Fase 6, y la Fase 6 contempla comparar un generador mayor en NF4 si hace falta.
+
 ### 2.4. Framework RAG
 
-**LangChain**
+**Python propio (LangChain / LangGraph aplazado)**
 
-Responsable de coordinar los componentes del sistema RAG.
+LangChain se contempló inicialmente para coordinar los componentes del sistema RAG. No se utiliza en las Fases 1-5: el flujo actual es lineal (`retrieve -> build_prompt -> generate -> validate`) y requiere control directo del presupuesto de tokens, medido con el tokenizador de Qwen y la plantilla de chat, por lo que se implementa en Python puro. Ese control también responde al principio de evitar abstracciones que oculten el funcionamiento interno del RAG.
 
-Se utilizará para integrar los distintos procesos de ingesta, recuperación y generación, así como para gestionar la interacción entre el contexto recuperado y el LLM.
+No se descarta para fases futuras. Se reconsiderará cuando existan flujos con estado, ramas o bucles, por ejemplo metodologías ágiles con user stories, programación orientada a modelos o comportamiento agéntico con herramientas. En ese caso se valorará LangGraph, y los pasos de `src/generation/` podrán envolverse como nodos sin reescribirse. Los clientes CLI y de VS Code no lo requieren: son clientes de la API (sección 8.3).
 
-La lógica específica del proyecto deberá mantenerse desacoplada de LangChain siempre que sea razonable.
+> **Estado:** la recuperación (Fase 4, `src/retrieval/`) y la generación (Fase 5, `src/generation/`) se han implementado en Python puro, sin LangChain.
 
-> **Estado:** la capa de recuperación (Fase 4, `src/retrieval/`) se ha implementado en Python puro, sin LangChain, para mantener el control sobre el funcionamiento interno del RAG. LangChain queda previsto, si se usa, para la Fase 5.
+### 2.5. Modelos locales (offline)
+
+El proyecto debe funcionar sin acceso a internet. Los modelos se descargan una sola vez, con `scripts/download_models.py`, a la carpeta `models/` (no se versiona), y se cargan siempre desde ahí con `local_files_only=True`.
+
+- Modelos descargados: `Qwen/Qwen2.5-Coder-1.5B-Instruct` y `intfloat/multilingual-e5-small`.
+- Se guardan los pesos originales (FP16 en el caso de Qwen), porque la cuantización NF4 se aplica al cargar el modelo.
+- `src/model_paths.py` (`local_model_path`) resuelve la ruta y falla con un mensaje claro si falta la carpeta.
+- Cargan desde `models/` `LLM` (`src/generation/llm.py`), `TokenCounter` (`src/generation/token_counter.py`) y `Embedder` (`src/embeddings/embedder.py`).
+- Como medida adicional, se puede definir `HF_HUB_OFFLINE=1` en el entorno para impedir cualquier consulta a Hugging Face.
 
 ## 3. Ingesta y procesamiento documental
 
@@ -201,7 +213,7 @@ En el índice, el payload de cada punto de Qdrant contiene estos campos con el n
 
 #### Consideraciones generales
 
-- El tamaño de los chunks deberá ser compatible con el límite de entrada del modelo de embeddings. `multilingual-e5-small` admite 512 tokens, inferior al tamaño máximo de 800 de la documentación: los chunks que lo superen se truncan al generar el embedding (el `Embedder` lo registra en el log). Número de chunks del corpus real afectados: por registrar.
+- El tamaño de los chunks deberá ser compatible con el límite de entrada del modelo de embeddings. `multilingual-e5-small` admite 512 tokens, inferior al tamaño máximo de 800 de la documentación: los chunks que lo superen se truncan al generar el embedding (el `Embedder` lo registra en el log). En el corpus de prueba (tres `.md` del proyecto y seis archivos de `src/retrieval/`) afectaron 2 de 180 chunks (1,1 %), ambos funciones largas de código.
 - Se evitará duplicar contenido innecesariamente.
 - La fragmentación deberá preservar la coherencia semántica y estructural.
 
@@ -224,7 +236,7 @@ Configuración inicial:
 - **Implementación:** `src/embeddings/embedder.py` (`Embedder`).
 - **Modelo:** `intfloat/multilingual-e5-small`.
 
-La elección de este modelo y su ejecución en CPU constituye la configuración inicial del sistema. El `Embedder` está implementado y validado técnicamente con 8 pruebas (dimensión, normalización, prefijos, inserción, búsqueda, filtros y persistencia). Los resultados de la validación de calidad de recuperación con código y documentación del proyecto y el tiempo de generación de embeddings en CPU están por registrar. Su comparación formal con BM25 y la búsqueda híbrida con el conjunto de evaluación se realizará en la Fase 6.
+La elección de este modelo y su ejecución en CPU constituye la configuración inicial del sistema. El `Embedder` está implementado y validado técnicamente con 8 pruebas (dimensión, normalización, prefijos, inserción, búsqueda, filtros y persistencia). El tiempo de generación de embeddings en CPU medido con el corpus de prueba es de 7,1 s para 180 chunks (unos 40 ms por chunk). Los resultados formales de la validación de calidad de recuperación con código y documentación del proyecto están por registrar. Su comparación formal con BM25 y la búsqueda híbrida con el conjunto de evaluación se realizará en la Fase 6.
 
 El modelo anterior, `Qwen/Qwen3-Embedding-0.6B`, sí se ha probado técnicamente en la NVIDIA RTX 3050 Laptop de 4 GB de VRAM mediante Sentence Transformers, FP16 y CUDA. La prueba generó embeddings de dimensión 1.024 para dos entradas (texto en español y código Python), con un pico de memoria asignada por PyTorch de aproximadamente 1,12 GB. Esta prueba confirma su funcionamiento, pero no justifica mantenerlo en la configuración inicial: la prueba conjunta mostró que los tres modelos neuronales ocupaban prácticamente toda la VRAM disponible.
 
@@ -529,6 +541,14 @@ Esta validación garantiza que las referencias apunten a fragmentos existentes, 
 
 La validación estructural de las referencias y la evaluación de su correspondencia semántica se considerarán comprobaciones independientes.
 
+> **Estado (Fase 5):** implementado en `src/generation/` con Python puro. Detalle de lo realizado:
+>
+> - **Prompt:** el system prompt (bloque común más bloque del modo, 212-223 tokens) va en inglés y la respuesta se da en el idioma de la pregunta. El mensaje de usuario usa los delimitadores `<context>` y `<question>`; los fragmentos se formatean como `[DOCUMENT S#]` (7.6). El caso "sin resultados" lo detecta el código (marcador y nota en el mensaje) y el idioma lo fija `detect_language`, porque el modelo de 1,5B ignoraba esas reglas cuando solo estaban en el system prompt.
+> - **Documentos como datos (7.3):** instrucción en el system prompt, recordatorio al final del mensaje de usuario y `sanitize`, que neutraliza delimitadores y elimina órdenes triviales dentro de los documentos. Es una defensa básica, no infalible.
+> - **Historial (7.4) y contexto RAG (7.5):** selección por tokens con el tokenizador de Qwen; presupuestos de 500 y 2.500 tokens, máximo 5 fragmentos, subordinados al presupuesto global de 4.096 con 512 reservados para la respuesta. Bajo presión se recorta primero el contexto RAG y después el historial. El truncamiento estructural de un fragmento que no cabe no está implementado: se descarta y se prueba el siguiente.
+> - **Referencias (7.7):** `citations.py` valida la existencia de los identificadores citados y construye la lista de fuentes con los fragmentos realmente citados. `GenerationResult.uncited` marca las respuestas con contexto que no citan ninguno. La validación semántica sigue pendiente (Fase 6).
+> - **Limitaciones observadas:** en las pruebas con el índice real el modelo no citó fragmentos, no se abstuvo ante contexto irrelevante y en un caso copió el contexto en lugar de redactar (detalle en `PLAN_IMPLEMENTACION.md`). Esto pone a prueba la decisión de 7.3 de que el LLM juzgue la suficiencia del contexto sin umbral de puntuación, y se revisará con los resultados de la Fase 6.
+
 ## 8. Interfaz de usuario y comunicación con el sistema
 
 ### 8.1. Arquitectura de interacción
@@ -607,12 +627,14 @@ El flujo principal del sistema será:
 |---|---|
 | Lenguaje | Python 3.11 |
 | Gestión del entorno y dependencias | uv (`pyproject.toml` + `uv.lock`) |
-| Framework RAG | LangChain |
+| Framework RAG | Python propio (LangChain / LangGraph aplazado a fases futuras) |
 | Deep Learning | PyTorch |
 | Aceleración GPU | CUDA (runtime cu130 validado) |
 | Cuantización | bitsandbytes (NF4, 4 bits) |
 | Utilidades numéricas | NumPy |
-| Inferencia LLM | Hugging Face Transformers + Accelerate |
+| Inferencia LLM | Hugging Face Transformers + Accelerate (streaming con `TextIteratorStreamer`) |
+| Presupuestos de tokens | Tokenizador de Qwen y plantilla de chat (`apply_chat_template`) |
+| Modelos locales | Carpeta `models/` (descarga única con `scripts/download_models.py`, carga con `local_files_only=True`) |
 | Modelo generativo | `Qwen/Qwen2.5-Coder-1.5B-Instruct` |
 | Cuantización LLM | bitsandbytes (NF4, 4 bits) |
 | Ingesta PDF | pymupdf |
@@ -787,16 +809,24 @@ Las siguientes cuestiones deberán resolverse mediante pruebas y evaluación:
 
 - Preparar el conjunto inicial de evaluación con consultas representativas de código y documentación.
 - Validar la calidad de recuperación de `intfloat/multilingual-e5-small` frente a BM25 y frente a la búsqueda híbrida (los tres modos ya están implementados y se pueden invocar por separado; falta medirlos con el conjunto de evaluación).
-- Medir el tiempo de generación de embeddings en CPU y su impacto en la ingesta.
-- Registrar los resultados de la validación de calidad de `intfloat/multilingual-e5-small` realizada al cerrar la Fase 3 (consultas, aciertos en el top 5, casos fallidos) y cuántos chunks del corpus superan los 512 tokens.
+- Registrar los resultados de la validación de calidad de `intfloat/multilingual-e5-small` realizada al cerrar la Fase 3 (consultas, aciertos en el top 5, casos fallidos).
 - Ajustar los parámetros de chunking y recuperación a partir de las métricas obtenidas.
 - Evaluar si la búsqueda híbrida necesita una etapa de reranking. No se seleccionará un modelo de reranking hasta que exista evidencia de que aporta una mejora suficiente.
+- Medir las limitaciones del generador observadas en la Fase 5: citas ausentes, abstención ante contexto irrelevante, copia del contexto, idioma y resistencia a inyecciones. Si el modelo de 1,5B no es aceptable, comparar un generador mayor en NF4 (variando solo el modelo) comprobando antes su encaje en 4 GB de VRAM.
+- Valorar un umbral mínimo de relevancia de recuperación (hoy descartado en 7.3) si la abstención del LLM resulta insuficiente.
+- Estudiar por qué una consulta por identificador ("¿Qué hace HybridRetriever?") trajo solo fragmentos de documentación y ningún fragmento de `hybrid.py`.
+- Ajustar con la evaluación los presupuestos de la Fase 5: 512 tokens de respuesta, 500 de historial, 2.500 de contexto RAG y máximo de 5 fragmentos.
+- Sustituir las rutas absolutas en `source` y `document_id` por rutas relativas a una raíz configurable (afecta a los cinco lectores y a `DocumentMetadata`).
+- Registrar la versión exacta de `transformers` y `accelerate` (ver `uv.lock`).
+- Reconsiderar LangChain / LangGraph cuando se aborden flujos con estado (user stories, programación orientada a modelos, comportamiento agéntico).
 
 Resuelto: los límites prácticos de contexto y generación del modelo generativo se evaluaron en la Fase 0 (ver sección 2.3). Queda pendiente únicamente contrastarlos con consultas RAG representativas durante la evaluación.
 
 Resuelto en la Fase 3: la integración de Qdrant en modo local (que requirió `qdrant-client` 1.20.0 y declarar el índice de PyTorch como `explicit`), el formato del payload basado en el `Chunk` real y la política de reindexación (UUID determinista y borrado por documento).
 
 Resuelto en la Fase 4: tokenización de BM25 para código, consistencia de los filtros entre Qdrant y BM25, invalidación del índice léxico (`refresh()` y comprobación perezosa por `count()`) y deduplicación por `chunk_id`.
+
+Resuelto en la Fase 5: presupuestos medidos con el tokenizador de Qwen y la plantilla de chat, orden de recorte bajo el presupuesto global, referencias temporales `S#` con validación estructural, saneamiento de delimitadores y órdenes triviales, tratamiento en código de los casos "sin resultados" e idioma, carga local de los modelos desde `models/` y tiempo de embeddings en CPU (7,1 s para 180 chunks) y chunks sobre 512 tokens (2 de 180) del corpus de prueba.
 
 Las pruebas técnicas de carga e inferencia de los modelos anteriores se conservan como evidencia experimental, pero no implican que esos modelos formen parte de la configuración inicial seleccionada.
 
@@ -809,7 +839,7 @@ Las pruebas técnicas de carga e inferencia de los modelos anteriores se conserv
 | 2 | Procesamiento y chunking | Completada |
 | 3 | Embeddings e indexación (Qdrant) | Completada |
 | 4 | Recuperación y fusión (BM25 + RRF) | Completada |
-| 5 | Generación y gestión del contexto | Pendiente |
+| 5 | Generación y gestión del contexto | Completada |
 | 6 | Evaluación | Pendiente |
 | 7 | API backend (FastAPI) | Pendiente |
 | 8 | Interfaz web (React + Vite) | Pendiente |
