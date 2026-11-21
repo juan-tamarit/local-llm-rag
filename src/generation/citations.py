@@ -31,7 +31,8 @@ def build_result(answer: str, context_chunks: list[ContextChunk]) -> GenerationR
         }
         for r in valid
     ]
+    uncited = bool(context_chunks) and not valid
     return GenerationResult(
         answer=answer, cited_refs=valid, invalid_refs=invalid,
-        sources=sources, context_chunks=context_chunks,
+        sources=sources, context_chunks=context_chunks, uncited=uncited,
     )

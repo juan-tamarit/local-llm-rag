@@ -36,6 +36,7 @@ class GenerationResult:
     invalid_refs: list[str] = field(default_factory=list)
     sources: list[dict] = field(default_factory=list)
     context_chunks: list[ContextChunk] = field(default_factory=list)
+    uncited: bool = False     # había contexto, pero la respuesta no cita ningún fragmento válido
 
 @dataclass(frozen=True)
 class Exchange:

@@ -3,7 +3,29 @@ from __future__ import annotations
 from typing import Callable
 from src.retrieval.base import RetrievalResult
 from .base import ContextChunk
+import logging
+import re
 
+logger = logging.getLogger(__name__)
+
+_DELIMITERS = re.compile(r"</?(?:context|question)>|\[DOCUMENT\s+S\d+\]", re.IGNORECASE)
+
+# Órdenes triviales dirigidas al modelo (ES/EN). Defensa básica, no infalible.
+_INJECTION = re.compile(
+    r"\b(?:ignor\w*|olvid\w*|disregard|forget)\b[^.\n]{0,60}"
+    r"\b(?:instrucciones|instructions|prompts?|reglas|rules)\b[^.\n]*[.\n]?"
+    r"|\b(?:you are now|ahora eres|new instructions|nuevas instrucciones)\b[^.\n]*[.\n]?",
+    re.IGNORECASE,
+)
+REMOVED = "[instruction-like text removed]"
+
+
+def sanitize(text: str) -> str:
+    """Neutraliza delimitadores del prompt y órdenes obvias dentro de un documento (§7.3)."""
+    text, n = _INJECTION.subn(REMOVED, text)
+    if n:
+        logger.warning("Posible inyección en un documento: %d fragmento(s) eliminado(s)", n)
+    return _DELIMITERS.sub(lambda m: m.group(0)[0] + "\u200b" + m.group(0)[1:], text)
 
 def format_chunk(ref: str, payload: dict) -> str:
     lines = [f"[DOCUMENT {ref}]", f"Source: {payload.get('source', '')}"]
@@ -20,7 +42,7 @@ def format_chunk(ref: str, payload: dict) -> str:
     start, end = payload.get("start_line"), payload.get("end_line")
     if start is not None and end is not None:
         lines.append(f"Lines: {start}-{end}")
-    lines += ["", "Content:", payload.get("content", "")]
+    lines += ["", "Content:", sanitize(payload.get("content", ""))]
     return "\n".join(lines)
 
 

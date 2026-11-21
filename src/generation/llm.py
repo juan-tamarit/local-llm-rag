@@ -12,6 +12,8 @@ from transformers import (
     TextIteratorStreamer,
 )
 
+from src.model_paths import local_model_path
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
@@ -24,17 +26,19 @@ class LLM:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA no disponible: el generador debe ejecutarse en GPU.")
         self.model_name = model_name
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        path = local_model_path(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True)
         quant = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.float16,
         )
         self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
+            path,
             quantization_config=quant,
             device_map={"": 0},          # todo en la GPU 0, sin CPU offloading
             dtype=torch.float16,
+            local_files_only=True,
         )
         self.model.eval()
         logger.info("Modelo %s cargado (VRAM asignada: %.2f GB)",

@@ -1,11 +1,14 @@
 # src/generation/token_counter.py
 from __future__ import annotations
 from transformers import AutoTokenizer
+from src.model_paths import local_model_path
 
 
 class TokenCounter:
     def __init__(self, model_name: str = "Qwen/Qwen2.5-Coder-1.5B-Instruct"):
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            local_model_path(model_name), local_files_only=True
+        )
 
     def count(self, text: str) -> int:
         return len(self.tokenizer.encode(text, add_special_tokens=False))

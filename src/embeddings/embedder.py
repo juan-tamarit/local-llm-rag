@@ -2,6 +2,7 @@ import logging
 from typing import List, Union
 
 from sentence_transformers import SentenceTransformer
+from src.model_paths import local_model_path
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,9 @@ class Embedder:
         self.batch_size = batch_size
 
         logger.info("Cargando '%s' en '%s'...", model_name, device)
-        self.model = SentenceTransformer(model_name, device=device)
+        self.model = SentenceTransformer(
+            local_model_path(model_name), device=device, local_files_only=True
+        )
         self.model.max_seq_length = MAX_SEQ_LENGTH
         self.dimension: int = self.model.get_embedding_dimension()
         logger.info("Modelo cargado (dimensión %d).", self.dimension)

@@ -4,3 +4,6 @@ __pycache__/
 *$py.class
 .venv/
 data/indexes/qdrant_db/
+src/model_paths.py
+scripts/
+models/
