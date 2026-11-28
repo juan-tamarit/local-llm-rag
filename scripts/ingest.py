@@ -3,12 +3,7 @@ import logging
 import time
 from pathlib import Path
 
-from src.ingestion.pipeline import IngestionPipeline
-from src.ingestion.code_reader import CodeReader
-from src.ingestion.markdown_reader import MarkdownReader
-from src.ingestion.html_reader import HTMLReader
-from src.ingestion.office_reader import OfficeReader
-from src.ingestion.pdf_reader import PDFReader
+from src.ingestion.factory import build_default_pipeline
 from src.processing.text_splitter import RecursiveTextSplitter
 from src.processing.code_splitter import CodeSplitter
 from src.embeddings.embedder import Embedder, MAX_SEQ_LENGTH
@@ -21,28 +16,13 @@ DOCS_DIR = Path("data/documents").resolve()
 CODE_EXTENSIONS = {".py"}      # el chunker AST solo cubre Python (Fase 2)
 
 
-def build_pipeline() -> IngestionPipeline:
-    pipeline = IngestionPipeline()
-    pipeline.register_reader(".py", CodeReader())
-    markdown = MarkdownReader()
-    for ext in (".md", ".markdown"):
-        pipeline.register_reader(ext, markdown)
-    html = HTMLReader()
-    for ext in (".html", ".htm"):
-        pipeline.register_reader(ext, html)
-    office = OfficeReader()
-    for ext in (".docx", ".pptx"):
-        pipeline.register_reader(ext, office)
-    pipeline.register_reader(".pdf", PDFReader())
-    return pipeline
-
-
 def main() -> None:
     files = sorted(p for p in DOCS_DIR.rglob("*") if p.is_file())
     if not files:
         raise SystemExit(f"No hay archivos en {DOCS_DIR}. Copia ahí tu corpus.")
 
-    pipeline = build_pipeline()
+    # source y document_id se calculan relativos a DOCS_DIR (independientes de la ubicación del proyecto)
+    pipeline = build_default_pipeline(base_dir=DOCS_DIR)
     text_splitter = RecursiveTextSplitter()
     code_splitter = CodeSplitter()
     embedder = Embedder()
@@ -76,7 +56,7 @@ def main() -> None:
             store.delete_by_document(payloads[0]["document_id"])   # reindexado limpio
             store.add_chunks(chunks, vectors)
             total_chunks += len(chunks)
-            log.info("%s -> %d chunks", path, len(chunks))
+            log.info("%s -> %d chunks", doc.source, len(chunks))
 
         print(f"\nArchivos: {len(files)} (omitidos: {skipped}) | chunks indexados: {total_chunks} "
               f"| total en el índice: {store.count()}")
